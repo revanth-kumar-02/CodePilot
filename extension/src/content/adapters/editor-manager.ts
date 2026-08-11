@@ -111,7 +111,6 @@ export class EditorManager {
     } else {
       let currentLength = 0;
       const totalLength = code.length;
-      const chunkSize = Math.max(1, Math.min(3, Math.ceil(totalLength / 120)));
 
       while (currentLength < totalLength) {
         if (isCancelled()) {
@@ -124,14 +123,29 @@ export class EditorManager {
           };
         }
 
-        currentLength = Math.min(totalLength, currentLength + chunkSize);
-        const chunkText = code.slice(0, currentLength);
-        await adapter.setValue(chunkText);
+        const charToInsert = code[currentLength];
+        currentLength++;
+        const currentSlice = code.slice(0, currentLength);
+        await adapter.setValue(currentSlice);
 
         try {
           adapter.focus();
         } catch {
           // Ignore focus error
+        }
+
+        try {
+          const activeEl = document.activeElement;
+          if (activeEl) {
+            const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
+            const keyOpts = { key, bubbles: true, cancelable: true };
+            activeEl.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
+            activeEl.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+            activeEl.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+            activeEl.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
+          }
+        } catch {
+          // Ignore DOM dispatch error
         }
 
         const progress = Math.min(100, Math.floor((currentLength / totalLength) * 100));
@@ -140,7 +154,8 @@ export class EditorManager {
         }
 
         if (currentLength < totalLength) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          const delay = 12 + Math.floor(Math.random() * 16);
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }

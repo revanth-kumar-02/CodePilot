@@ -387,10 +387,16 @@ export function initMonacoPageBridge(): void {
         return;
       }
 
-      // Progressive mode
+      // Strict Anti-Detection Character-by-Character Typing Mode
       let currentLength = 0;
       const totalLength = code.length;
-      const chunkSize = Math.max(1, Math.min(3, Math.ceil(totalLength / 120)));
+
+      // Clear existing model content ONCE at start of typing
+      try {
+        target.model.setValue('');
+      } catch {
+        // Ignore initial clear error
+      }
 
       const step = () => {
         if (activeCancelledIds.has(insertionId)) {
@@ -410,33 +416,59 @@ export function initMonacoPageBridge(): void {
           return;
         }
 
-        const nextIndex = Math.min(totalLength, currentLength + chunkSize);
-        const chunkText = code.slice(currentLength, nextIndex);
+        if (currentLength >= totalLength) {
+          diagnostics.write = 'PASS';
+          let actualValue = '';
+          try {
+            actualValue = target.model.getValue() || '';
+          } catch {
+            actualValue = '';
+          }
+          performReadbackVerification(actualValue);
+          return;
+        }
+
+        const charToInsert = code[currentLength];
+        currentLength++;
 
         try {
-          if (currentLength === 0) {
-            target.model.setValue(chunkText);
-          } else {
-            const lineCount = target.model.getLineCount();
-            const maxCol = target.model.getLineMaxColumn(lineCount);
-            const monacoGlobal = (window as any).monaco;
-            if (monacoGlobal && monacoGlobal.Range) {
-              const range = new monacoGlobal.Range(lineCount, maxCol, lineCount, maxCol);
-              if (target.editor && typeof target.editor.executeEdits === 'function') {
-                target.editor.executeEdits('codepilot-progressive', [
-                  { range, text: chunkText, forceMoveMarkers: true },
-                ]);
-              } else if (typeof target.model.pushEditOperations === 'function') {
-                target.model.pushEditOperations([], [{ range, text: chunkText }], () => null);
-              } else {
-                target.model.setValue(code.slice(0, nextIndex));
-              }
+          const lineCount = target.model.getLineCount();
+          const maxCol = target.model.getLineMaxColumn(lineCount);
+          const monacoGlobal = (window as any).monaco;
+          if (monacoGlobal && monacoGlobal.Range) {
+            const range = new monacoGlobal.Range(lineCount, maxCol, lineCount, maxCol);
+            if (target.editor && typeof target.editor.executeEdits === 'function') {
+              target.editor.executeEdits('codepilot-typing', [
+                { range, text: charToInsert, forceMoveMarkers: true },
+              ]);
+            } else if (typeof target.model.pushEditOperations === 'function') {
+              target.model.pushEditOperations([], [{ range, text: charToInsert }], () => null);
             } else {
-              target.model.setValue(code.slice(0, nextIndex));
+              target.model.setValue(code.slice(0, currentLength));
             }
+          } else {
+            target.model.setValue(code.slice(0, currentLength));
           }
         } catch {
-          target.model.setValue(code.slice(0, nextIndex));
+          target.model.setValue(code.slice(0, currentLength));
+        }
+
+        // Anti-Detection: Dispatch DOM Key & Input Events
+        try {
+          const domNode =
+            target.editor && typeof target.editor.getDomNode === 'function'
+              ? target.editor.getDomNode()
+              : document.activeElement;
+          if (domNode) {
+            const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
+            const keyOpts = { key, bubbles: true, cancelable: true };
+            domNode.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
+            domNode.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+            domNode.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+            domNode.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
+          }
+        } catch {
+          // Ignore event dispatch errors
         }
 
         if (target.editor && typeof target.editor.revealPosition === 'function') {
@@ -449,7 +481,6 @@ export function initMonacoPageBridge(): void {
           }
         }
 
-        currentLength = nextIndex;
         const progress = Math.min(100, Math.floor((currentLength / totalLength) * 100));
 
         window.postMessage(
@@ -463,18 +494,9 @@ export function initMonacoPageBridge(): void {
           '*'
         );
 
-        if (currentLength < totalLength) {
-          setTimeout(step, 10);
-        } else {
-          diagnostics.write = 'PASS';
-          let actualValue = '';
-          try {
-            actualValue = target.model.getValue() || '';
-          } catch {
-            actualValue = '';
-          }
-          performReadbackVerification(actualValue);
-        }
+        // Dynamic human-like typing delay (12ms - 28ms per character)
+        const delay = 12 + Math.floor(Math.random() * 16);
+        setTimeout(step, delay);
       };
 
       step();
