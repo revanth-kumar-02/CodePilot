@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "CodePilot",
+  "version": "0.1.0",
+  "description": "Universal Browser-Based Coding Assistant",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "CodePilot"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "world": "ISOLATED"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["page-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": ["activeTab", "tabs", "scripting", "storage"]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "codepilot-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodePilot v2 — Universal Browser-Based Coding Assistant Foundation",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix extension\"",
+    "build": "npm run build --prefix backend && npm run build --prefix extension",
+    "test": "npm run test --prefix backend",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix extension",
+    "lint": "npm run lint --prefix backend && npm run lint --prefix extension"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

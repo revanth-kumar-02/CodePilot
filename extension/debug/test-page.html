@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodePilot Runtime Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 24px;
+      max-width: 500px;
+      margin: 0 auto;
+      color: #212529;
+      background-color: #f8f9fa;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    h1 {
+      font-size: 18px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #e9ecef;
+      padding-bottom: 8px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .status-connected {
+      color: #28a745;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>CodePilot Runtime Test</h1>
+    <div class="row">
+      <span>Status:</span>
+      <span class="status-connected">Active Test Page</span>
+    </div>
+    <div class="row">
+      <span>Content Script:</span>
+      <span class="status-connected" id="cs-status">Listening...</span>
+    </div>
+  </div>
+
+  <script>
+    // Simple script to display active content script detection if queried
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'CODEPILOT_TEST_PING') {
+        document.getElementById('cs-status').textContent = 'Connected';
+      }
+    });
+  </script>
+</body>
+</html>
