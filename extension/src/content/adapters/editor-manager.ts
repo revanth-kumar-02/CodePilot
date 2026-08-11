@@ -98,10 +98,20 @@ export class EditorManager {
       return false;
     };
 
-    if (options?.mode === 'progressive') {
+    if (options?.mode === 'instant') {
+      const writeSuccess = await adapter.setValue(code);
+      if (!writeSuccess) {
+        return {
+          success: false,
+          editorType: adapter.type,
+          errorCode: 'EDITOR_NOT_ACCESSIBLE',
+          message: 'EDITOR_NOT_ACCESSIBLE: Failed to write code into detected editor.',
+        };
+      }
+    } else {
       let currentLength = 0;
       const totalLength = code.length;
-      const chunkSize = Math.max(5, Math.ceil(totalLength / 30));
+      const chunkSize = Math.max(1, Math.min(3, Math.ceil(totalLength / 120)));
 
       while (currentLength < totalLength) {
         if (isCancelled()) {
@@ -121,7 +131,7 @@ export class EditorManager {
         try {
           adapter.focus();
         } catch {
-          // Ignore
+          // Ignore focus error
         }
 
         const progress = Math.min(100, Math.floor((currentLength / totalLength) * 100));
@@ -130,18 +140,8 @@ export class EditorManager {
         }
 
         if (currentLength < totalLength) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          await new Promise((resolve) => setTimeout(resolve, 10));
         }
-      }
-    } else {
-      const writeSuccess = await adapter.setValue(code);
-      if (!writeSuccess) {
-        return {
-          success: false,
-          editorType: adapter.type,
-          errorCode: 'EDITOR_NOT_ACCESSIBLE',
-          message: 'EDITOR_NOT_ACCESSIBLE: Failed to write code into detected editor.',
-        };
       }
     }
 

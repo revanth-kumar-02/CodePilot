@@ -390,7 +390,7 @@ export function initMonacoPageBridge(): void {
       // Progressive mode
       let currentLength = 0;
       const totalLength = code.length;
-      const chunkSize = Math.max(5, Math.ceil(totalLength / 30));
+      const chunkSize = Math.max(1, Math.min(3, Math.ceil(totalLength / 120)));
 
       const step = () => {
         if (activeCancelledIds.has(insertionId)) {
@@ -464,7 +464,7 @@ export function initMonacoPageBridge(): void {
         );
 
         if (currentLength < totalLength) {
-          setTimeout(step, 20);
+          setTimeout(step, 10);
         } else {
           diagnostics.write = 'PASS';
           let actualValue = '';

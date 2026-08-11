@@ -39,7 +39,6 @@ export const CodeView: React.FC<CodeViewProps> = ({
   );
   const [copied, setCopied] = useState<boolean>(false);
   const [localInserting, setLocalInserting] = useState<boolean>(false);
-  const [insertionMode, setInsertionMode] = useState<'progressive' | 'instant'>('progressive');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [activeInsertionId, setActiveInsertionId] = useState<string | null>(null);
   const [insertResult, setInsertResult] = useState<{
@@ -107,7 +106,7 @@ export const CodeView: React.FC<CodeViewProps> = ({
     setInsertResult({ status: 'idle', message: '' });
 
     try {
-      const res = await onInsertCode(generatedCode.code, selectedLanguage, force, insertionMode, insId);
+      const res = await onInsertCode(generatedCode.code, selectedLanguage, force, 'progressive', insId);
       if (res.success) {
         setInsertResult({
           status: 'success',
@@ -434,28 +433,6 @@ export const CodeView: React.FC<CodeViewProps> = ({
             >
               {LanguageRegistry.getInfo(generatedCode.language).displayName}
             </span>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>MODE:</span>
-            <select
-              value={insertionMode}
-              onChange={(e) => setInsertionMode(e.target.value as 'progressive' | 'instant')}
-              disabled={isBusy}
-              style={{
-                background: '#0f172a',
-                color: '#38bdf8',
-                border: '1px solid #3b82f6',
-                borderRadius: '4px',
-                padding: '3px 5px',
-                fontSize: '10px',
-                fontWeight: 600,
-                cursor: isBusy ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <option value="progressive">⏳ Progressive</option>
-              <option value="instant">⚡ Instant</option>
-            </select>
-          </div>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button
