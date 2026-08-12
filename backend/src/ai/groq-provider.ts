@@ -9,9 +9,11 @@ import { ReasoningPromptBuilder } from '../reasoning/reasoning-prompt-builder.js
 import { ReasoningValidator } from '../reasoning/reasoning-validator.js';
 import { CodePromptBuilder } from '../services/code-prompt-builder.js';
 import { CodeValidator } from '../services/code-validator.js';
+import { OpenRouterProvider } from './openrouter-provider.js';
 
 export class GroqProvider implements AIProvider {
   public readonly name = 'groq';
+  private openRouterProvider = new OpenRouterProvider();
 
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const config = getAIConfig();
@@ -19,6 +21,10 @@ export class GroqProvider implements AIProvider {
     const model = config.groqFastModel;
 
     if (!apiKey) {
+      if (config.openRouterApiKey) {
+        console.warn(`[CodePilot][GroqProvider] GROQ_API_KEY missing. Falling back to OpenRouter...`);
+        return this.openRouterProvider.analyzeProblem(problem);
+      }
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
         'GROQ_API_KEY is not configured on the backend environment.',
@@ -47,9 +53,17 @@ export class GroqProvider implements AIProvider {
       'Content-Type': 'application/json',
     };
 
-    return this.executeRequest(url, headers, payload, (rawContent) =>
-      ResponseParser.parse(rawContent, this.name, model)
-    );
+    try {
+      return await this.executeRequest(url, headers, payload, (rawContent) =>
+        ResponseParser.parse(rawContent, this.name, model)
+      );
+    } catch (err) {
+      if (err instanceof AIError && err.code === 'AI_RATE_LIMITED' && config.openRouterApiKey) {
+        console.warn(`[CodePilot][GroqProvider] Groq rate limit hit during analysis. Falling back seamlessly to OpenRouter (${config.model})...`);
+        return this.openRouterProvider.analyzeProblem(problem);
+      }
+      throw err;
+    }
   }
 
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
@@ -58,6 +72,10 @@ export class GroqProvider implements AIProvider {
     const model = config.groqReasoningModel;
 
     if (!apiKey) {
+      if (config.openRouterApiKey) {
+        console.warn(`[CodePilot][GroqProvider] GROQ_API_KEY missing. Falling back to OpenRouter...`);
+        return this.openRouterProvider.reasonProblem(problem, isRecoveryAttempt);
+      }
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
         'GROQ_API_KEY is not configured on the backend environment.',
@@ -86,10 +104,18 @@ export class GroqProvider implements AIProvider {
       'Content-Type': 'application/json',
     };
 
-    return this.executeRequest(url, headers, payload, (rawContent) => {
-      const { plan } = ReasoningValidator.parseAndValidate(rawContent, problem, this.name, model);
-      return plan;
-    });
+    try {
+      return await this.executeRequest(url, headers, payload, (rawContent) => {
+        const { plan } = ReasoningValidator.parseAndValidate(rawContent, problem, this.name, model);
+        return plan;
+      });
+    } catch (err) {
+      if (err instanceof AIError && err.code === 'AI_RATE_LIMITED' && config.openRouterApiKey) {
+        console.warn(`[CodePilot][GroqProvider] Groq rate limit hit during reasoning. Falling back seamlessly to OpenRouter (${config.model})...`);
+        return this.openRouterProvider.reasonProblem(problem, isRecoveryAttempt);
+      }
+      throw err;
+    }
   }
 
   public async generateCode(
@@ -103,6 +129,10 @@ export class GroqProvider implements AIProvider {
     let model = config.groqFastModel;
 
     if (!apiKey) {
+      if (config.openRouterApiKey) {
+        console.warn(`[CodePilot][GroqProvider] GROQ_API_KEY missing. Falling back to OpenRouter...`);
+        return this.openRouterProvider.generateCode(problem, plan, targetLanguage);
+      }
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
         'GROQ_API_KEY is not configured on the backend environment.',
@@ -148,25 +178,38 @@ export class GroqProvider implements AIProvider {
         };
       });
     } catch (err: unknown) {
-      if (err instanceof AIError && err.code === 'AI_RATE_LIMITED' && model !== config.groqReasoningModel) {
-        console.warn(`[CodePilot][GroqProvider] Fast model ${model} rate-limited. Falling back to ${config.groqReasoningModel}...`);
-        model = config.groqReasoningModel;
-        return this.executeRequest(url, headers, buildPayload(model), (rawContent) => {
-          const validation = CodeValidator.parseAndValidate(rawContent, targetLanguage);
-          return {
-            code: validation.code,
-            language: targetLanguage,
-            explanation: [
-              `Implemented ${plan.algorithm.name} (${plan.algorithm.category}) using Groq (${model}).`,
-              `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
-            ],
-            completeness: validation.completeness,
-            model,
-            provider: this.name,
-            generatedAt: Date.now(),
-            durationMs: Date.now() - startTime,
-          };
-        });
+      if (err instanceof AIError && err.code === 'AI_RATE_LIMITED') {
+        if (model !== config.groqReasoningModel) {
+          console.warn(`[CodePilot][GroqProvider] Fast model ${model} rate-limited. Trying Groq reasoning model ${config.groqReasoningModel}...`);
+          model = config.groqReasoningModel;
+          try {
+            return await this.executeRequest(url, headers, buildPayload(model), (rawContent) => {
+              const validation = CodeValidator.parseAndValidate(rawContent, targetLanguage);
+              return {
+                code: validation.code,
+                language: targetLanguage,
+                explanation: [
+                  `Implemented ${plan.algorithm.name} (${plan.algorithm.category}) using Groq (${model}).`,
+                  `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
+                ],
+                completeness: validation.completeness,
+                model,
+                provider: this.name,
+                generatedAt: Date.now(),
+                durationMs: Date.now() - startTime,
+              };
+            });
+          } catch (err2) {
+            if (err2 instanceof AIError && err2.code === 'AI_RATE_LIMITED' && config.openRouterApiKey) {
+              console.warn(`[CodePilot][GroqProvider] Groq fully rate-limited. Falling back seamlessly to OpenRouter (${config.model})...`);
+              return this.openRouterProvider.generateCode(problem, plan, targetLanguage);
+            }
+            throw err2;
+          }
+        } else if (config.openRouterApiKey) {
+          console.warn(`[CodePilot][GroqProvider] Groq rate-limited. Falling back seamlessly to OpenRouter (${config.model})...`);
+          return this.openRouterProvider.generateCode(problem, plan, targetLanguage);
+        }
       }
       throw err;
     }
