@@ -16,7 +16,7 @@ export class GroqProvider implements AIProvider {
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const config = getAIConfig();
     const apiKey = config.groqApiKey;
-    const model = config.groqModel;
+    const model = config.groqFastModel;
 
     if (!apiKey) {
       throw new AIError(
@@ -55,7 +55,7 @@ export class GroqProvider implements AIProvider {
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
     const config = getAIConfig();
     const apiKey = config.groqApiKey;
-    const model = config.groqModel;
+    const model = config.groqReasoningModel;
 
     if (!apiKey) {
       throw new AIError(
@@ -100,7 +100,7 @@ export class GroqProvider implements AIProvider {
     const startTime = Date.now();
     const config = getAIConfig();
     const apiKey = config.groqApiKey;
-    const model = config.groqModel;
+    const model = config.groqFastModel;
 
     if (!apiKey) {
       throw new AIError(
@@ -176,6 +176,7 @@ export class GroqProvider implements AIProvider {
         }
 
         if (response.status === 429) {
+          await new Promise((res) => setTimeout(res, 2500));
           throw new AIError('AI_RATE_LIMITED', 'Groq rate limit exceeded.', 429, true);
         }
 

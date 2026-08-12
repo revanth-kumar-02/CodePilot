@@ -121,7 +121,12 @@ export class ReasoningService {
           break;
         }
 
-        console.log(`[CodePilot][Reasoning][${requestId}] Preparing controlled recovery attempt ${attempt + 1}...`);
+        if (aiErr.code === 'AI_RATE_LIMITED') {
+          console.log(`[CodePilot][Reasoning][${requestId}] Rate limited. Waiting 3s before attempt ${attempt + 1}...`);
+          await new Promise((res) => setTimeout(res, 3000));
+        } else {
+          console.log(`[CodePilot][Reasoning][${requestId}] Preparing controlled recovery attempt ${attempt + 1}...`);
+        }
       }
     }
 
