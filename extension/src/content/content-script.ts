@@ -128,7 +128,14 @@ function initializeContentScript(): void {
     return;
   }
 
-  // 1. Initial Handshake
+  // 1. Immediate Unconditional Detection & Reporting
+  const detResult = runDetectionAndReport(true);
+  if (detResult && (detResult.type === 'coding-problem' || detResult.type === 'coding')) {
+    runExtractionAndReport(detResult);
+  }
+  initMutationObserver();
+
+  // 2. Notify background worker of readiness
   const readyMessage: ContentScriptReadyMessage = {
     type: 'CONTENT_SCRIPT_READY',
     timestamp: Date.now(),
@@ -137,13 +144,6 @@ function initializeContentScript(): void {
   safeSendMessage(readyMessage, (response: ContentScriptAckResponse) => {
     if (response?.type === 'CONTENT_SCRIPT_ACK') {
       logger.info('Received CONTENT_SCRIPT_ACK from background worker');
-      const detResult = runDetectionAndReport(false);
-
-      if (detResult && (detResult.type === 'coding-problem' || detResult.type === 'coding')) {
-        runExtractionAndReport(detResult);
-      }
-
-      initMutationObserver();
     }
   });
 

@@ -73,13 +73,21 @@ export class SignalRegistry {
       'author',
     ];
 
-    const foundDocSignals = articleDocKeywords.filter((k) => fullText.includes(k));
-    if (foundDocSignals.length > 0) {
+    // 5. URL Pattern Signals (HackerRank, LeetCode, CodeChef, Codeforces, etc.)
+    const urlLower = snapshot.url.toLowerCase();
+    if (urlLower.includes('hackerrank.com/test/') || urlLower.includes('hackerrank.com/challenges/')) {
       signals.push({
-        id: 'normal-article-structure',
-        category: 'structure',
-        score: -0.2,
-        evidence: `Detected article/documentation indicator(s): ${foundDocSignals.slice(0, 2).join(', ')}`,
+        id: 'url-hackerrank-problem',
+        category: 'content',
+        score: 0.6,
+        evidence: 'URL matches HackerRank test/challenge pattern',
+      });
+    } else if (urlLower.includes('leetcode.com/problems/') || urlLower.includes('codechef.com/problems/')) {
+      signals.push({
+        id: 'url-platform-problem',
+        category: 'content',
+        score: 0.6,
+        evidence: 'URL matches coding platform problem pattern',
       });
     }
 

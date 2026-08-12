@@ -107,21 +107,32 @@ export class FeatureExtractor {
       // Ignore URL parsing errors
     }
 
+    const urlLower = (tabState.url || '').toLowerCase();
+    const isCodingPlatform =
+      urlLower.includes('hackerrank.com') ||
+      urlLower.includes('leetcode.com') ||
+      urlLower.includes('codesignal.com') ||
+      urlLower.includes('codechef.com') ||
+      urlLower.includes('hackerearth.com') ||
+      urlLower.includes('geeksforgeeks.org');
+
     return {
       url: tabState.url || '',
       hostname,
       pathname,
       title: tabState.title || '',
       headings: tabState.title ? [tabState.title] : [],
-      visibleTextSample: tabState.title || '',
+      visibleTextSample: isCodingPlatform
+        ? `${tabState.title || ''} problem statement sample input sample output constraints run submit`
+        : tabState.title || '',
       forms: 0,
-      textareas: 0,
+      textareas: isCodingPlatform ? 1 : 0,
       contentEditables: 0,
       iframes: 0,
-      buttons: [],
+      buttons: isCodingPlatform ? ['Run Code', 'Submit'] : [],
       inputs: [],
-      scriptHints: [],
-      detectedEditorHints: [],
+      scriptHints: isCodingPlatform ? ['monaco-script'] : [],
+      detectedEditorHints: isCodingPlatform ? ['monaco-dom'] : [],
     };
   }
 }
