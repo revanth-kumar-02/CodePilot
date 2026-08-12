@@ -497,12 +497,15 @@ export function initMonacoPageBridge(): void {
           const charToInsert = code[currentLength];
           currentLength++;
 
-          const currentSlice = code.slice(0, currentLength);
           try {
-            inputarea.value = currentSlice;
-            inputarea.dispatchEvent(new Event('input', { bubbles: true }));
+            document.execCommand('insertText', false, charToInsert);
           } catch {
-            // Ignore value update failure
+            try {
+              inputarea.value = charToInsert;
+              inputarea.dispatchEvent(new Event('input', { bubbles: true }));
+            } catch {
+              // Ignore fallback errors
+            }
           }
 
           const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
