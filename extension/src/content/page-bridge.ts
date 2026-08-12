@@ -12,20 +12,44 @@ export function initMonacoPageBridge(): void {
       runtimeFound: false,
       activeEditorFound: false,
       modelFound: false,
+      isDomFallback: false,
       editor: null as any,
       model: null as any,
       modelUri: 'N/A',
       detectedLanguage: null as string | null,
     };
 
-    const monacoGlobal = (window as any).monaco;
+    let monacoGlobal = (window as any).monaco;
     if (!monacoGlobal || !monacoGlobal.editor) {
-      return info;
+      try {
+        if (typeof (window as any).require === 'function') {
+          monacoGlobal = (window as any).require('vs/editor/editor.main');
+        }
+      } catch {}
     }
-    info.runtimeFound = true;
+    if (!monacoGlobal || !monacoGlobal.editor) {
+      try {
+        monacoGlobal = (window as any).monacoInstance;
+      } catch {}
+    }
+    if (!monacoGlobal || !monacoGlobal.editor) {
+      try {
+        for (const key of Object.keys(window)) {
+          const val = (window as any)[key];
+          if (val && typeof val === 'object' && val.editor && typeof val.editor.getEditors === 'function') {
+            monacoGlobal = val;
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    if (monacoGlobal && monacoGlobal.editor) {
+      info.runtimeFound = true;
+    }
 
     // Strategy 1: Find active editor from monaco.editor.getEditors()
-    if (typeof monacoGlobal.editor.getEditors === 'function') {
+    if (monacoGlobal && monacoGlobal.editor && typeof monacoGlobal.editor.getEditors === 'function') {
       const editors = monacoGlobal.editor.getEditors();
       if (Array.isArray(editors) && editors.length > 0) {
         const candidateEditors = editors.filter((e: any) => {
@@ -97,8 +121,8 @@ export function initMonacoPageBridge(): void {
       }
     }
 
-    // Strategy 2: If model not found via getEditors, search monaco.editor.getModels()
-    if (!info.modelFound && typeof monacoGlobal.editor.getModels === 'function') {
+    // Strategy 2: Search monaco.editor.getModels()
+    if (!info.modelFound && monacoGlobal && monacoGlobal.editor && typeof monacoGlobal.editor.getModels === 'function') {
       const models = monacoGlobal.editor.getModels();
       if (Array.isArray(models) && models.length > 0) {
         const validModels = models.filter((m: any) => m && typeof m.getValue === 'function');
@@ -119,12 +143,37 @@ export function initMonacoPageBridge(): void {
       }
     }
 
-    // Strategy 3: Check DOM elements bound to monaco
+    // Strategy 3: Check DOM elements bound to monaco & React Fiber properties
     if (!info.modelFound) {
-      const monacoNodes = document.querySelectorAll('.monaco-editor');
+      const monacoNodes = document.querySelectorAll('.monaco-editor, [data-mode-id], .react-monaco-editor-container, .hr-monaco-editor');
       for (const node of Array.from(monacoNodes)) {
-        const instance = (node as any).__monaco_editor__ || (node as any).editor;
+        let instance = (node as any).__monaco_editor__ || (node as any).editor || (node as any)._editor || (node as any)._editorContext || (node as any).codeEditor;
+
+        if (!instance) {
+          const reactKeys = Object.keys(node).filter((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$') || k.startsWith('__reactContainer$'));
+          for (const k of reactKeys) {
+            let fiber = (node as any)[k];
+            let depth = 0;
+            while (fiber && depth < 15) {
+              if (fiber.memoizedProps) {
+                if (fiber.memoizedProps.editor && typeof fiber.memoizedProps.editor.getModel === 'function') {
+                  instance = fiber.memoizedProps.editor;
+                  break;
+                }
+              }
+              if (fiber.stateNode && fiber.stateNode.editor && typeof fiber.stateNode.editor.getModel === 'function') {
+                instance = fiber.stateNode.editor;
+                break;
+              }
+              fiber = fiber.return;
+              depth++;
+            }
+            if (instance) break;
+          }
+        }
+
         if (instance && typeof instance.getModel === 'function') {
+          info.runtimeFound = true;
           info.activeEditorFound = true;
           info.editor = instance;
           const m = instance.getModel();
@@ -137,6 +186,22 @@ export function initMonacoPageBridge(): void {
             }
             break;
           }
+        }
+      }
+    }
+
+    // Strategy 4: DOM Fallback for HackerRank / locked Monaco setups
+    if (!info.modelFound) {
+      const domEditor = document.querySelector('.monaco-editor, [data-mode-id], .react-monaco-editor-container, .hr-monaco-editor');
+      if (domEditor) {
+        info.runtimeFound = true;
+        info.activeEditorFound = true;
+        info.modelFound = true;
+        info.isDomFallback = true;
+        info.modelUri = 'dom://monaco-fallback';
+        const langAttr = document.querySelector('[data-mode-id]')?.getAttribute('data-mode-id');
+        if (langAttr) {
+          info.detectedLanguage = langAttr;
         }
       }
     }
@@ -163,6 +228,12 @@ export function initMonacoPageBridge(): void {
 
     if (type === 'CODEPILOT_MONACO_PING') {
       const target = findActiveMonaco();
+      const actualLen = target.isDomFallback
+        ? (document.querySelector('.monaco-editor .view-lines') as HTMLElement)?.innerText?.length || 0
+        : target.model
+        ? (target.model.getValue() || '').length
+        : 0;
+
       const diagnostics: MonacoDiagnostics = {
         bridge: 'CONNECTED',
         monacoRuntime: target.runtimeFound ? 'FOUND' : 'NOT FOUND',
@@ -172,7 +243,7 @@ export function initMonacoPageBridge(): void {
         write: 'FAIL',
         readback: target.modelFound ? 'PASS' : 'FAIL',
         expectedLength: 0,
-        actualLength: target.model ? (target.model.getValue() || '').length : 0,
+        actualLength: actualLen,
         verification: 'FAIL',
       };
 
@@ -198,7 +269,19 @@ export function initMonacoPageBridge(): void {
 
     if (type === 'CODEPILOT_MONACO_GET') {
       const target = findActiveMonaco();
-      const actualValue = target.model ? target.model.getValue() || '' : '';
+      let actualValue = '';
+      if (target.isDomFallback) {
+        const viewLinesNode = document.querySelector('.monaco-editor .view-lines');
+        if (viewLinesNode) {
+          actualValue = (viewLinesNode as HTMLElement).innerText || viewLinesNode.textContent || '';
+        } else {
+          const inputarea = document.querySelector('.monaco-editor textarea.inputarea') as HTMLTextAreaElement;
+          actualValue = inputarea ? inputarea.value : '';
+        }
+      } else {
+        actualValue = target.model ? target.model.getValue() || '' : '';
+      }
+
       const diagnostics: MonacoDiagnostics = {
         bridge: 'CONNECTED',
         monacoRuntime: target.runtimeFound ? 'FOUND' : 'NOT FOUND',
@@ -267,7 +350,7 @@ export function initMonacoPageBridge(): void {
         return;
       }
 
-      if (!target.modelFound || !target.model) {
+      if (!target.isDomFallback && (!target.modelFound || !target.model)) {
         window.postMessage(
           {
             source: 'CODEPILOT_PAGE_BRIDGE',
@@ -339,6 +422,113 @@ export function initMonacoPageBridge(): void {
           );
         }
       };
+
+      if (target.isDomFallback) {
+        const inputarea = document.querySelector('.monaco-editor textarea.inputarea, .ace_text-input, textarea') as HTMLTextAreaElement;
+        if (!inputarea) {
+          window.postMessage(
+            {
+              source: 'CODEPILOT_PAGE_BRIDGE',
+              type: 'CODEPILOT_MONACO_RESULT',
+              id,
+              success: false,
+              errorCode: 'EDITOR_NOT_ACCESSIBLE',
+              message: 'EDITOR_NOT_ACCESSIBLE: Editor input textarea not accessible in DOM.',
+              diagnostics,
+            },
+            '*'
+          );
+          return;
+        }
+
+        try {
+          inputarea.focus();
+        } catch {}
+
+        let currentLength = 0;
+        const totalLength = code.length;
+
+        try {
+          inputarea.select();
+          document.execCommand('selectAll', false);
+        } catch {}
+
+        const domStep = () => {
+          if (activeCancelledIds.has(insertionId)) {
+            activeCancelledIds.delete(insertionId);
+            window.postMessage(
+              {
+                source: 'CODEPILOT_PAGE_BRIDGE',
+                type: 'CODEPILOT_MONACO_RESULT',
+                id,
+                success: false,
+                errorCode: 'INSERTION_CANCELLED',
+                message: 'INSERTION_CANCELLED',
+                diagnostics,
+              },
+              '*'
+            );
+            return;
+          }
+
+          if (currentLength >= totalLength) {
+            diagnostics.write = 'PASS';
+            const viewLines = document.querySelector('.monaco-editor .view-lines');
+            const actualVal = viewLines ? (viewLines as HTMLElement).innerText || '' : inputarea.value || '';
+            performReadbackVerification(actualVal);
+            return;
+          }
+
+          if (mode === 'instant') {
+            try {
+              document.execCommand('insertText', false, code);
+              inputarea.dispatchEvent(new Event('input', { bubbles: true }));
+            } catch {
+              inputarea.value = code;
+              inputarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            diagnostics.write = 'PASS';
+            const viewLines = document.querySelector('.monaco-editor .view-lines');
+            const actualVal = viewLines ? (viewLines as HTMLElement).innerText || '' : inputarea.value || '';
+            performReadbackVerification(actualVal);
+            return;
+          }
+
+          const charToInsert = code[currentLength];
+          currentLength++;
+
+          try {
+            document.execCommand('insertText', false, charToInsert);
+          } catch {
+            inputarea.value = code.slice(0, currentLength);
+          }
+
+          const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
+          const keyOpts = { key, bubbles: true, cancelable: true };
+          inputarea.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
+          inputarea.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+          inputarea.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: charToInsert, bubbles: true }));
+          inputarea.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
+
+          const progress = Math.min(100, Math.floor((currentLength / totalLength) * 100));
+          window.postMessage(
+            {
+              source: 'CODEPILOT_PAGE_BRIDGE',
+              type: 'CODEPILOT_MONACO_PROGRESS',
+              id,
+              insertionId,
+              progress,
+            },
+            '*'
+          );
+
+          const delay = 12 + Math.floor(Math.random() * 16);
+          setTimeout(domStep, delay);
+        };
+
+        domStep();
+        return;
+      }
 
       if (mode === 'instant') {
         let writePass = false;
