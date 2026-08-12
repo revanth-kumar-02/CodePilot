@@ -27,14 +27,20 @@ Do NOT include:
 - Comments
 - "Here is the code" text
 
-STRICT CODE GENERATION RULES:
-1. Produce complete, working, syntactically correct source code in ${language.toUpperCase()}.
-2. Include all necessary library imports and headers (e.g., #include <vector>, import java.util.*, etc.).
-3. Write clean, readable code with proper formatting, but ZERO comments.
-4. Strictly follow the provided Algorithm Steps, Complexity targets, and Edge Case considerations.
-5. Absolutely NO dummy placeholders, partial implementations, or TODO comments.
-6. Handle all constraints and edge cases specified in the plan.
-7. Return ONLY the source code solution. Do NOT add conversational intro or outro text.`;
+STRICT COMPETITIVE PROGRAMMING PLATFORM RULES:
+1. METHOD SIGNATURES & RETURN TYPES:
+   - Follow the EXACT method names, parameter types, and return types specified in the problem statement.
+   - If a method specifies return type boolean, return boolean (true or false), NOT String ("Same"/"Different") or int.
+   - If overloaded methods are requested (e.g. compare for String, int, and int[]), implement ALL requested overloaded variants in the class.
+
+2. JAVA CLASS ACCESS MODIFIERS (CRITICAL):
+   - In Java, DO NOT declare custom/secondary classes as 'public class' (e.g. use 'class Comparator' or 'class Solution', NEVER 'public class Comparator').
+   - Competitive platforms like HackerRank compile all code in a single file named Solution.java. Having a 'public class Comparator' causes a fatal compilation error: "class Comparator is public, should be declared in a file named Comparator.java".
+
+3. ACCURATE IMPLEMENTATION:
+   - Include all required library imports (e.g. import java.util.*; import java.io.*; for Java, or #include <vector> for C++).
+   - Absolutely NO dummy placeholders, partial implementations, or TODO comments.
+   - Return ONLY the executable source code with ZERO comments.`;
   }
 
   public static buildUserPrompt(
