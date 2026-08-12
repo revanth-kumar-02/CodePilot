@@ -59,21 +59,7 @@ export class SignalRegistry {
       });
     }
 
-    // 4. Negative / Normal Page Signals (Documentation, Articles, Blogs, Search, Video)
-    const articleDocKeywords = [
-      'documentation',
-      'api reference',
-      'blog post',
-      'published on',
-      'reading time',
-      'table of contents',
-      'wikipedia',
-      'youtube',
-      'comments',
-      'author',
-    ];
-
-    // 5. URL Pattern Signals (HackerRank, LeetCode, CodeChef, Codeforces, etc.)
+    // 4. URL Pattern Signals (HackerRank, LeetCode, CodeChef, Codeforces, etc.)
     const urlLower = snapshot.url.toLowerCase();
     if (urlLower.includes('hackerrank.com/test/') || urlLower.includes('hackerrank.com/challenges/')) {
       signals.push({

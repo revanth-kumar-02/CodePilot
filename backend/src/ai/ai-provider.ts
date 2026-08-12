@@ -1,6 +1,7 @@
 import { ProblemInput, ProblemAnalysis } from './schemas.js';
 import { SolutionPlan } from '../reasoning/schemas.js';
 import { GeneratedCode, SupportedLanguage } from './code-schemas.js';
+import { PlatformRule } from '../config/platform-rules.js';
 
 export type AIErrorCode =
   | 'AI_EMPTY_RESPONSE'
@@ -18,6 +19,7 @@ export type AIErrorCode =
   | 'AI_REQUEST_TOO_LARGE'
   | 'CODE_COMMENT_VIOLATION'
   | 'CODE_VALIDATION_ERROR'
+  | 'CODE_STRUCTURE_INVALID'
   | 'AI_UNKNOWN_ERROR';
 
 export class AIError extends Error {
@@ -49,6 +51,7 @@ export class AIError extends Error {
         case 'AI_CONFIGURATION_ERROR':
         case 'AI_AUTHENTICATION_ERROR':
         case 'AI_REQUEST_TOO_LARGE':
+        case 'CODE_STRUCTURE_INVALID':
         default:
           this.retryable = false;
           break;
@@ -61,5 +64,11 @@ export interface AIProvider {
   name: string;
   analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis>;
   reasonProblem(problem: ProblemInput, isRecoveryAttempt?: boolean): Promise<SolutionPlan>;
-  generateCode(problem: ProblemInput, plan: SolutionPlan, targetLanguage: SupportedLanguage): Promise<GeneratedCode>;
+  generateCode(
+    problem: ProblemInput,
+    plan: SolutionPlan,
+    targetLanguage: SupportedLanguage,
+    rule?: PlatformRule,
+    retryInstruction?: string
+  ): Promise<GeneratedCode>;
 }

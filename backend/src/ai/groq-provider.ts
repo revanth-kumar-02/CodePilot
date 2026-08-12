@@ -10,6 +10,7 @@ import { ReasoningValidator } from '../reasoning/reasoning-validator.js';
 import { CodePromptBuilder } from '../services/code-prompt-builder.js';
 import { CodeValidator } from '../services/code-validator.js';
 import { OpenRouterProvider } from './openrouter-provider.js';
+import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 
 export class GroqProvider implements AIProvider {
   public readonly name = 'groq';
@@ -121,17 +122,20 @@ export class GroqProvider implements AIProvider {
   public async generateCode(
     problem: ProblemInput,
     plan: SolutionPlan,
-    targetLanguage: SupportedLanguage
+    targetLanguage: SupportedLanguage,
+    rule?: PlatformRule,
+    retryInstruction?: string
   ): Promise<GeneratedCode> {
     const startTime = Date.now();
     const config = getAIConfig();
     const apiKey = config.groqApiKey;
     let model = config.groqFastModel;
+    const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 
     if (!apiKey) {
       if (config.openRouterApiKey) {
         console.warn(`[CodePilot][GroqProvider] GROQ_API_KEY missing. Falling back to OpenRouter...`);
-        return this.openRouterProvider.generateCode(problem, plan, targetLanguage);
+        return this.openRouterProvider.generateCode(problem, plan, targetLanguage, activeRule, retryInstruction);
       }
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
@@ -141,8 +145,11 @@ export class GroqProvider implements AIProvider {
       );
     }
 
-    const systemPrompt = CodePromptBuilder.buildSystemPrompt(targetLanguage);
-    const userPrompt = CodePromptBuilder.buildUserPrompt(problem, plan, targetLanguage);
+    const systemPrompt = CodePromptBuilder.buildSystemPrompt(targetLanguage, activeRule);
+    let userPrompt = CodePromptBuilder.buildUserPrompt(problem, plan, targetLanguage);
+    if (retryInstruction) {
+      userPrompt += `\n\nREGENERATION INSTRUCTION:\n${retryInstruction}`;
+    }
 
     const url = 'https://api.groq.com/openai/v1/chat/completions';
     const headers = {

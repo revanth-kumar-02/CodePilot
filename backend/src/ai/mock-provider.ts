@@ -3,6 +3,7 @@ import { ProblemInput, ProblemAnalysis } from './schemas.js';
 import { SolutionPlan } from '../reasoning/schemas.js';
 import { GeneratedCode, SupportedLanguage } from './code-schemas.js';
 import { AlgorithmEvaluator } from '../reasoning/algorithm-evaluator.js';
+import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 
 export class MockAIProvider implements AIProvider {
   public readonly name = 'mock-provider';
@@ -339,7 +340,9 @@ export class MockAIProvider implements AIProvider {
   public async generateCode(
     problem: ProblemInput,
     plan: SolutionPlan,
-    targetLanguage: SupportedLanguage
+    targetLanguage: SupportedLanguage,
+    rule?: PlatformRule,
+    retryInstruction?: string
   ): Promise<GeneratedCode> {
     if (problem.statement.includes('trigger_timeout')) {
       throw new AIError('AI_TIMEOUT', 'Request to AI provider timed out after 45000ms.', 504);
@@ -366,10 +369,102 @@ export class MockAIProvider implements AIProvider {
       };
     }
 
+    const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
+
+    if (problem.statement.includes('trigger_invalid_class_name')) {
+      return {
+        code: `public class WrongClassName {\n    public static void main(String[] args) {}\n}`,
+        language: targetLanguage,
+        explanation: ['Test invalid class name'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    if (problem.statement.includes('trigger_extra_brace')) {
+      return {
+        code: `public class ${activeRule.className} {\n    public static void main(String[] args) {}\n}\n}`,
+        language: targetLanguage,
+        explanation: ['Test extra brace'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    if (problem.statement.includes('trigger_missing_brace')) {
+      return {
+        code: `public class ${activeRule.className} {\n    public static void main(String[] args) {}`,
+        language: targetLanguage,
+        explanation: ['Test missing brace'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    if (problem.statement.includes('trigger_duplicate_class')) {
+      return {
+        code: `public class ${activeRule.className} {}\npublic class ${activeRule.className} {}`,
+        language: targetLanguage,
+        explanation: ['Test duplicate public class'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    if (problem.statement.includes('trigger_nested_class')) {
+      return {
+        code: `public class ${activeRule.className} {\n    public class ${activeRule.className} {}\n}`,
+        language: targetLanguage,
+        explanation: ['Test nested class'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    if (problem.statement.includes('trigger_comments')) {
+      return {
+        code: `public class ${activeRule.className} {\n    // Some comment\n    public static void main(String[] args) {}\n}`,
+        language: targetLanguage,
+        explanation: ['Test comments violation'],
+        completeness: true,
+        model: 'mock-qwen-model',
+        provider: this.name,
+        generatedAt: Date.now(),
+        durationMs: 5,
+      };
+    }
+
+    const javaClass = activeRule.className;
+    const problemText = `${problem.title} ${problem.statement}`.toLowerCase();
+    
+    let javaCode: string;
+    if (problemText.includes('parenthesis') || problemText.includes('checkvalidstring')) {
+      javaCode = `public class ${javaClass} {\n    public boolean checkValidString(String s) {\n        int low = 0;\n        int high = 0;\n        for (int i = 0; i < s.length(); i++) {\n            char c = s.charAt(i);\n            if (c == '(') {\n                low++;\n                high++;\n            } else if (c == ')') {\n                low--;\n                high--;\n            } else if (c == '*') {\n                low--;\n                high++;\n            }\n            if (high < 0) return false;\n            if (low < 0) low = 0;\n        }\n        return low == 0;\n    }\n}`;
+    } else if (activeRule.requiresMain) {
+      javaCode = `import java.util.Scanner;\n\npublic class ${javaClass} {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        if (!scanner.hasNextInt()) return;\n        int n = scanner.nextInt();\n        long[] arr = new long[n];\n        for (int i = 0; i < n; i++) {\n            arr[i] = scanner.nextLong();\n        }\n        long maxVal = arr[0];\n        for (int i = 1; i < n; i++) {\n            if (arr[i] > maxVal) {\n                maxVal = arr[i];\n            }\n        }\n        System.out.println(maxVal);\n    }\n}`;
+    } else {
+      javaCode = `public class ${javaClass} {\n    public int solve(int[] nums) {\n        if (nums == null || nums.length == 0) return 0;\n        int maxVal = nums[0];\n        for (int i = 1; i < nums.length; i++) {\n            if (nums[i] > maxVal) maxVal = nums[i];\n        }\n        return maxVal;\n    }\n}`;
+    }
+
     const mockSnippets: Record<SupportedLanguage, string> = {
       cpp: `#include <iostream>\n#include <vector>\n\nusing namespace std;\n\nint main() {\n    int n;\n    if (!(cin >> n) || n <= 0) return 0;\n    vector<long long> arr(n);\n    for (int i = 0; i < n; i++) {\n        cin >> arr[i];\n    }\n    long long maxVal = arr[0];\n    for (int i = 1; i < n; i++) {\n        if (arr[i] > maxVal) {\n            maxVal = arr[i];\n        }\n    }\n    cout << maxVal << endl;\n    return 0;\n}`,
       python: `import sys\n\ndef solve():\n    input_data = sys.stdin.read().split()\n    if not input_data:\n        return\n    n = int(input_data[0])\n    arr = [int(x) for x in input_data[1:n+1]]\n    max_val = arr[0]\n    for val in arr[1:]:\n        if val > max_val:\n            max_val = val\n    print(max_val)\n\nif __name__ == '__main__':\n    solve()`,
-      java: `import java.util.Scanner;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        if (!scanner.hasNextInt()) return;\n        int n = scanner.nextInt();\n        long[] arr = new long[n];\n        for (int i = 0; i < n; i++) {\n            arr[i] = scanner.nextLong();\n        }\n        long maxVal = arr[0];\n        for (int i = 1; i < n; i++) {\n            if (arr[i] > maxVal) {\n                maxVal = arr[i];\n            }\n        }\n        System.out.println(maxVal);\n    }\n}`,
+      java: javaCode,
       javascript: `function solve(input) {\n  const tokens = input.trim().split(/\\s+/);\n  if (tokens.length === 0 || !tokens[0]) return;\n  const n = parseInt(tokens[0], 10);\n  const arr = tokens.slice(1, n + 1).map(Number);\n  let maxVal = arr[0];\n  for (let i = 1; i < arr.length; i++) {\n    if (arr[i] > maxVal) maxVal = arr[i];\n  }\n  console.log(maxVal);\n}`,
       typescript: `function solve(input: string): void {\n  const tokens = input.trim().split(/\\s+/);\n  if (tokens.length === 0 || !tokens[0]) return;\n  const n = parseInt(tokens[0], 10);\n  const arr = tokens.slice(1, n + 1).map(Number);\n  let maxVal = arr[0];\n  for (let i = 1; i < arr.length; i++) {\n    if (arr[i] > maxVal) maxVal = arr[i];\n  }\n  console.log(maxVal);\n}`,
       c: `#include <stdio.h>\n\nint main() {\n    int n;\n    if (scanf("%d", &n) != 1 || n <= 0) return 0;\n    long long maxVal;\n    scanf("%lld", &maxVal);\n    for (int i = 1; i < n; i++) {\n        long long val;\n        scanf("%lld", &val);\n        if (val > maxVal) maxVal = val;\n    }\n    printf("%lld\\n", maxVal);\n    return 0;\n}`,

@@ -9,6 +9,7 @@ import { ReasoningPromptBuilder } from '../reasoning/reasoning-prompt-builder.js
 import { ReasoningValidator } from '../reasoning/reasoning-validator.js';
 import { CodePromptBuilder } from '../services/code-prompt-builder.js';
 import { CodeValidator } from '../services/code-validator.js';
+import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 
 export class OpenRouterProvider implements AIProvider {
   public readonly name = 'openrouter';
@@ -209,10 +210,13 @@ export class OpenRouterProvider implements AIProvider {
   public async generateCode(
     problem: ProblemInput,
     plan: SolutionPlan,
-    targetLanguage: SupportedLanguage
+    targetLanguage: SupportedLanguage,
+    rule?: PlatformRule,
+    retryInstruction?: string
   ): Promise<GeneratedCode> {
     const startTime = Date.now();
     const config = getAIConfig();
+    const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 
     if (!config.openRouterApiKey) {
       throw new AIError(
@@ -222,8 +226,11 @@ export class OpenRouterProvider implements AIProvider {
       );
     }
 
-    const systemPrompt = CodePromptBuilder.buildSystemPrompt(targetLanguage);
-    const userPrompt = CodePromptBuilder.buildUserPrompt(problem, plan, targetLanguage);
+    const systemPrompt = CodePromptBuilder.buildSystemPrompt(targetLanguage, activeRule);
+    let userPrompt = CodePromptBuilder.buildUserPrompt(problem, plan, targetLanguage);
+    if (retryInstruction) {
+      userPrompt += `\n\nREGENERATION INSTRUCTION:\n${retryInstruction}`;
+    }
 
     const payload = {
       model: config.model,

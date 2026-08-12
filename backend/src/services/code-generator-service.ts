@@ -3,6 +3,7 @@ import { SolutionPlan, SolutionPlanSchema } from '../reasoning/schemas.js';
 import { GeneratedCode, SupportedLanguage, SupportedLanguageSchema } from '../ai/code-schemas.js';
 import { CodeValidator } from './code-validator.js';
 import { getAIConfig } from '../ai/model-config.js';
+import { PlatformRules } from '../config/platform-rules.js';
 
 export class CodeGeneratorService {
   private provider: AIProvider;
@@ -85,60 +86,81 @@ export class CodeGeneratorService {
       );
     }
 
-    // 3. Resolve Target Language
+    // 3. Resolve Target Language & Platform Rules
     const targetLanguage = this.resolveLanguage(problem.language, requestedLanguage);
+    const platformRule = PlatformRules.getRule(
+      problem.source?.hostname || problem.source?.url,
+      problem.source?.platform
+    );
 
     console.log(`[CodePilot][CodeGenerator] Target language: ${targetLanguage}`);
+    console.log(`[CodePilot][CodeGenerator] Platform: ${platformRule.platform} (Required class: ${platformRule.className})`);
     console.log(`[CodePilot][CodeGenerator] Provider: ${this.provider.name}`);
 
     // 4. Bounded Generation Attempts (max 2 attempts)
     let attempt = 0;
     const maxAttempts = 2;
+    let lastIssues: string[] = [];
 
     while (attempt < maxAttempts) {
       attempt++;
       console.log(`[CodePilot][CodeGenerator] Code generation attempt ${attempt}/${maxAttempts}`);
 
       try {
-        let currentPlan = plan;
+        let retryInstruction: string | undefined;
         if (attempt > 1) {
-          // Bounded regeneration attempt prompt modification
-          const retryInstruction = `Return the same solution as source code only.
-Remove ALL comments.
-Do not add any comments.
-Do not add explanations or Markdown.`;
-          currentPlan = {
-            ...plan,
-            algorithm: {
-              ...plan.algorithm,
-              steps: [...plan.algorithm.steps, retryInstruction],
-            },
-          };
+          retryInstruction = `Regenerate the solution using the required platform structure.
+Use exactly one public class named ${platformRule.className}.
+Ensure all braces are balanced.
+Do not add any extra closing braces.
+Return source code only.`;
         }
 
-        const result = await this.provider.generateCode(problem, currentPlan, targetLanguage);
-        const validation = CodeValidator.parseAndValidate(result.code, targetLanguage);
+        const result = await this.provider.generateCode(
+          problem,
+          plan,
+          targetLanguage,
+          platformRule,
+          retryInstruction
+        );
+        const validation = CodeValidator.parseAndValidate(result.code, targetLanguage, platformRule);
+        lastIssues = validation.issues;
+
+        if (validation.diagnostics) {
+          console.log(`[CodePilot][Diagnostics]
+Platform: ${validation.diagnostics.platform}
+Language: ${validation.diagnostics.language}
+Required class: ${validation.diagnostics.requiredClass}
+Detected class: ${validation.diagnostics.detectedClass}
+Public classes: ${validation.diagnostics.publicClassesCount}
+Brace validation: ${validation.diagnostics.braceValidation}
+Comment validation: ${validation.diagnostics.commentValidation}
+Structure: ${validation.diagnostics.structureValidation}
+Final status: ${validation.diagnostics.finalStatus}`);
+        }
 
         if (validation.hasComments) {
           console.warn(`[CodePilot][CodeGenerator] Attempt ${attempt} failed: CODE_COMMENT_VIOLATION detected.`);
           if (attempt < maxAttempts) {
-            console.log('[CodePilot][CodeGenerator] Retrying generation with explicit no-comment constraint...');
+            console.log('[CodePilot][CodeGenerator] Retrying generation with explicit repair instruction...');
             continue;
           } else {
-            throw new AIError(
-              'CODE_COMMENT_VIOLATION',
-              'Generated code contains comments after 2 attempts.',
-              400
-            );
+            throw new AIError('CODE_COMMENT_VIOLATION', 'Generated code contains comments after 2 attempts.', 400);
           }
         }
 
         if (!validation.valid) {
-          throw new AIError(
-            'CODE_VALIDATION_ERROR',
-            `Generated code structural validation failed: ${validation.issues.join('; ')}`,
-            400
-          );
+          console.warn(`[CodePilot][CodeGenerator] Attempt ${attempt} failed: CODE_STRUCTURE_INVALID detected.`);
+          if (attempt < maxAttempts) {
+            console.log('[CodePilot][CodeGenerator] Retrying generation with explicit structural repair prompt...');
+            continue;
+          } else {
+            throw new AIError(
+              'CODE_STRUCTURE_INVALID',
+              `CODE_STRUCTURE_INVALID: Generated code structural validation failed after ${maxAttempts} attempts. Issues: ${validation.issues.join('; ')}`,
+              400
+            );
+          }
         }
 
         const finalResult: GeneratedCode = {
@@ -156,7 +178,7 @@ Do not add explanations or Markdown.`;
           durationMs,
         };
       } catch (err) {
-        if (err instanceof AIError && err.code === 'CODE_COMMENT_VIOLATION') {
+        if (err instanceof AIError && (err.code === 'CODE_COMMENT_VIOLATION' || err.code === 'CODE_STRUCTURE_INVALID')) {
           if (attempt < maxAttempts) {
             continue;
           }
@@ -172,6 +194,10 @@ Do not add explanations or Markdown.`;
       }
     }
 
-    throw new AIError('CODE_COMMENT_VIOLATION', 'Generated code contains comments after 2 attempts.', 400);
+    throw new AIError(
+      'CODE_STRUCTURE_INVALID',
+      `CODE_STRUCTURE_INVALID: Generated code structural validation failed after 2 attempts. Issues: ${lastIssues.join('; ')}`,
+      400
+    );
   }
 }

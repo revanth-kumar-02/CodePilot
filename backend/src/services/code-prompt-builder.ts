@@ -1,10 +1,57 @@
 import { ProblemInput } from '../ai/schemas.js';
 import { SolutionPlan } from '../reasoning/schemas.js';
 import { SupportedLanguage } from '../ai/code-schemas.js';
+import { PlatformRule } from '../config/platform-rules.js';
 
 export class CodePromptBuilder {
-  public static buildSystemPrompt(language: SupportedLanguage): string {
+  public static buildSystemPrompt(language: SupportedLanguage, rule?: PlatformRule): string {
+    let platformInstructions = '';
+
+    if (language === 'java') {
+      if (rule?.platform === 'leetcode' || rule?.className === 'Solution') {
+        platformInstructions = `
+PLATFORM-SPECIFIC JAVA CONSTRAINTS (LEETCODE):
+- The generated Java solution MUST start with:
+  public class Solution {
+      ...
+  }
+- For LeetCode, the primary solution class MUST be named exactly 'Solution'.
+- NEVER generate: 'class Main', 'public class Main', 'class Solution' (must be 'public class Solution'), 'public class Test', or any custom class name.
+- Do NOT automatically add 'public static void main(String[] args)' unless the extracted problem requirements explicitly require it.
+- Preserve the exact method signature/interface expected by the problem statement.`;
+      } else {
+        platformInstructions = `
+PLATFORM-SPECIFIC JAVA CONSTRAINTS (STANDARD/GENERIC CODING PLATFORM):
+- For platforms where submission requires a main program, the submission MUST use:
+  public class Main {
+      public static void main(String[] args) {
+          ...
+      }
+  }
+- Primary solution class MUST be named exactly 'Main'.
+- NEVER use: 'Solution', 'Test', 'CustomSolution', or any random class name.
+- Input/output handling must follow the extracted problem specification (e.g. reading from Scanner/System.in and printing output).`;
+      }
+    }
+
     return `You are CodePilot's Expert Code Generation Engine. Your job is to implement an optimal, production-ready source code solution in ${language.toUpperCase()} based strictly on the provided Coding Problem and validated Solution Plan.
+
+STRICT TEST CASE & PROBLEM LOGIC ACCURACY:
+1. TEST-CASE DRIVEN LOGIC:
+   - Your generated code MUST be strictly derived from the problem requirements and verified step-by-step against ALL provided example test cases (<EXAMPLES>).
+   - Trace your algorithm mentally on EVERY provided example input.
+   - Ensure the logic yields the EXACT expected output for Example 1, Example 2, Example 3, etc.
+   - Do NOT generate flawed heuristics, generic placeholders, or incomplete logic that fails on valid test cases.
+
+2. METHOD SIGNATURES & RETURN TYPES:
+   - Follow the EXACT method names, parameter types, and return types specified in the problem statement or starter code.
+   - If a method specifies return type boolean, return boolean (true or false).
+   - If overloaded methods are requested, implement ALL requested overloaded variants in the class.
+
+3. ACCURATE IMPLEMENTATION & BRACE BALANCE:
+   - Include all required library imports (e.g. import java.util.*; import java.io.*; for Java, or #include <vector> for C++).
+   - Absolutely NO dummy placeholders, partial implementations, or TODO comments.
+   - Ensure all braces '{' and '}' are perfectly balanced with zero extra closing braces.
 
 HARD REQUIREMENT - NO COMMENTS:
 Generated code MUST NOT contain any comments whatsoever.
@@ -19,28 +66,14 @@ Do NOT generate:
 - block comments
 - explanatory comments
 
-Return ONLY the executable source code required by the target platform.
+Return ONLY executable source code with ZERO comments.
 Do NOT include:
 - Markdown code fences
 - Explanations
 - Algorithm descriptions
 - Comments
 - "Here is the code" text
-
-STRICT COMPETITIVE PROGRAMMING PLATFORM RULES:
-1. METHOD SIGNATURES & RETURN TYPES:
-   - Follow the EXACT method names, parameter types, and return types specified in the problem statement.
-   - If a method specifies return type boolean, return boolean (true or false), NOT String ("Same"/"Different") or int.
-   - If overloaded methods are requested (e.g. compare for String, int, and int[]), implement ALL requested overloaded variants in the class.
-
-2. JAVA CLASS ACCESS MODIFIERS (CRITICAL):
-   - In Java, DO NOT declare custom/secondary classes as 'public class' (e.g. use 'class Comparator' or 'class Solution', NEVER 'public class Comparator').
-   - Competitive platforms like HackerRank compile all code in a single file named Solution.java. Having a 'public class Comparator' causes a fatal compilation error: "class Comparator is public, should be declared in a file named Comparator.java".
-
-3. ACCURATE IMPLEMENTATION:
-   - Include all required library imports (e.g. import java.util.*; import java.io.*; for Java, or #include <vector> for C++).
-   - Absolutely NO dummy placeholders, partial implementations, or TODO comments.
-   - Return ONLY the executable source code with ZERO comments.`;
+${platformInstructions}`;
   }
 
   public static buildUserPrompt(
@@ -92,8 +125,10 @@ ${plan.implementationRequirements.map((req) => `-[${req.priority.toUpperCase()}]
 
 TARGET LANGUAGE: ${targetLanguage.toUpperCase()}
 
-REMINDER: Return ONLY executable source code in ${targetLanguage.toUpperCase()} with ABSOLUTELY NO COMMENTS.
+CRITICAL ACCURACY DIRECTIVE:
+1. Dry-run your implementation against ALL test cases listed in <EXAMPLES> above to ensure 100% correct outputs.
+2. Return ONLY executable source code in ${targetLanguage.toUpperCase()} with ABSOLUTELY NO COMMENTS.
 
-Please generate the complete source code implementation in ${targetLanguage.toUpperCase()} now.`;
+Please generate the complete, accurate source code implementation in ${targetLanguage.toUpperCase()} now.`;
   }
 }

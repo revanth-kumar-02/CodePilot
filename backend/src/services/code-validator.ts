@@ -1,4 +1,6 @@
 import { SupportedLanguage } from '../ai/code-schemas.js';
+import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
+import { JavaStructureValidator, JavaValidationDiagnostics } from './java-structure-validator.js';
 
 export interface CodeValidationResult {
   code: string;
@@ -6,6 +8,7 @@ export interface CodeValidationResult {
   valid: boolean;
   hasComments: boolean;
   issues: string[];
+  diagnostics?: JavaValidationDiagnostics;
 }
 
 export class CodeValidator {
@@ -131,7 +134,8 @@ export class CodeValidator {
 
   public static parseAndValidate(
     rawOutput: string,
-    language: SupportedLanguage
+    language: SupportedLanguage,
+    rule?: PlatformRule
   ): CodeValidationResult {
     const code = this.stripFences(rawOutput);
     const hasComments = this.checkForComments(code, language);
@@ -139,16 +143,29 @@ export class CodeValidator {
     const structure = this.validateStructure(code, language);
 
     const issues = [...completeness.issues, ...structure.issues];
+    let diagnostics: JavaValidationDiagnostics | undefined;
+
+    if (language === 'java') {
+      const activeRule = rule || PlatformRules.getRule();
+      diagnostics = JavaStructureValidator.validate(code, activeRule);
+      if (diagnostics.issues.length > 0) {
+        issues.push(...diagnostics.issues);
+      }
+    }
+
     if (hasComments) {
       issues.push('CODE_COMMENT_VIOLATION: Generated code contains comments.');
     }
 
+    const isValid = structure.valid && !hasComments && (diagnostics ? diagnostics.finalStatus === 'PASS' : true);
+
     return {
       code,
       completeness: completeness.complete,
-      valid: structure.valid && !hasComments,
+      valid: isValid,
       hasComments,
       issues,
+      diagnostics,
     };
   }
 }
