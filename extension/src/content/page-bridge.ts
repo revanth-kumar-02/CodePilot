@@ -497,10 +497,12 @@ export function initMonacoPageBridge(): void {
           const charToInsert = code[currentLength];
           currentLength++;
 
+          const currentSlice = code.slice(0, currentLength);
           try {
-            document.execCommand('insertText', false, charToInsert);
+            inputarea.value = currentSlice;
+            inputarea.dispatchEvent(new Event('input', { bubbles: true }));
           } catch {
-            inputarea.value = code.slice(0, currentLength);
+            // Ignore value update failure
           }
 
           const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
@@ -621,26 +623,11 @@ export function initMonacoPageBridge(): void {
         const charToInsert = code[currentLength];
         currentLength++;
 
+        const currentSlice = code.slice(0, currentLength);
         try {
-          const lineCount = target.model.getLineCount();
-          const maxCol = target.model.getLineMaxColumn(lineCount);
-          const monacoGlobal = (window as any).monaco;
-          if (monacoGlobal && monacoGlobal.Range) {
-            const range = new monacoGlobal.Range(lineCount, maxCol, lineCount, maxCol);
-            if (target.editor && typeof target.editor.executeEdits === 'function') {
-              target.editor.executeEdits('codepilot-typing', [
-                { range, text: charToInsert, forceMoveMarkers: true },
-              ]);
-            } else if (typeof target.model.pushEditOperations === 'function') {
-              target.model.pushEditOperations([], [{ range, text: charToInsert }], () => null);
-            } else {
-              target.model.setValue(code.slice(0, currentLength));
-            }
-          } else {
-            target.model.setValue(code.slice(0, currentLength));
-          }
+          target.model.setValue(currentSlice);
         } catch {
-          target.model.setValue(code.slice(0, currentLength));
+          // Fallback ignore
         }
 
         // Anti-Detection: Dispatch DOM Key & Input Events
