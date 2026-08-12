@@ -100,7 +100,7 @@ export class GroqProvider implements AIProvider {
     const startTime = Date.now();
     const config = getAIConfig();
     const apiKey = config.groqApiKey;
-    const model = config.groqFastModel;
+    let model = config.groqFastModel;
 
     if (!apiKey) {
       throw new AIError(
@@ -114,38 +114,62 @@ export class GroqProvider implements AIProvider {
     const systemPrompt = CodePromptBuilder.buildSystemPrompt(targetLanguage);
     const userPrompt = CodePromptBuilder.buildUserPrompt(problem, plan, targetLanguage);
 
-    const payload = {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 4096,
-    };
-
     const url = 'https://api.groq.com/openai/v1/chat/completions';
     const headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     };
 
-    return this.executeRequest(url, headers, payload, (rawContent) => {
-      const validation = CodeValidator.parseAndValidate(rawContent, targetLanguage);
-      return {
-        code: validation.code,
-        language: targetLanguage,
-        explanation: [
-          `Implemented ${plan.algorithm.name} (${plan.algorithm.category}) using Groq (${model}).`,
-          `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
-        ],
-        completeness: validation.completeness,
-        model,
-        provider: this.name,
-        generatedAt: Date.now(),
-        durationMs: Date.now() - startTime,
-      };
+    const buildPayload = (selectedModel: string) => ({
+      model: selectedModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 4096,
     });
+
+    try {
+      return await this.executeRequest(url, headers, buildPayload(model), (rawContent) => {
+        const validation = CodeValidator.parseAndValidate(rawContent, targetLanguage);
+        return {
+          code: validation.code,
+          language: targetLanguage,
+          explanation: [
+            `Implemented ${plan.algorithm.name} (${plan.algorithm.category}) using Groq (${model}).`,
+            `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
+          ],
+          completeness: validation.completeness,
+          model,
+          provider: this.name,
+          generatedAt: Date.now(),
+          durationMs: Date.now() - startTime,
+        };
+      });
+    } catch (err: unknown) {
+      if (err instanceof AIError && err.code === 'AI_RATE_LIMITED' && model !== config.groqReasoningModel) {
+        console.warn(`[CodePilot][GroqProvider] Fast model ${model} rate-limited. Falling back to ${config.groqReasoningModel}...`);
+        model = config.groqReasoningModel;
+        return this.executeRequest(url, headers, buildPayload(model), (rawContent) => {
+          const validation = CodeValidator.parseAndValidate(rawContent, targetLanguage);
+          return {
+            code: validation.code,
+            language: targetLanguage,
+            explanation: [
+              `Implemented ${plan.algorithm.name} (${plan.algorithm.category}) using Groq (${model}).`,
+              `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
+            ],
+            completeness: validation.completeness,
+            model,
+            provider: this.name,
+            generatedAt: Date.now(),
+            durationMs: Date.now() - startTime,
+          };
+        });
+      }
+      throw err;
+    }
   }
 
   private async executeRequest<T>(
@@ -175,9 +199,10 @@ export class GroqProvider implements AIProvider {
           throw new AIError('AI_AUTHENTICATION_ERROR', 'Invalid or unauthorized Groq API Key.', 401, false);
         }
 
-        if (response.status === 429) {
-          await new Promise((res) => setTimeout(res, 2500));
-          throw new AIError('AI_RATE_LIMITED', 'Groq rate limit exceeded.', 429, true);
+        if (response.status === 429 || response.status === 413 || errText.includes('rate_limit_exceeded') || errText.includes('TPM')) {
+          console.warn(`[CodePilot][GroqProvider] Rate limit detected (Status ${response.status}). Waiting 3000ms before retry...`);
+          await new Promise((res) => setTimeout(res, 3000));
+          throw new AIError('AI_RATE_LIMITED', `Groq rate limit exceeded: ${errText}`, 429, true);
         }
 
         if (response.status >= 500) {

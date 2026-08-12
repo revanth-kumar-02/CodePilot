@@ -42,10 +42,16 @@ STRICT CODE GENERATION RULES:
     plan: SolutionPlan,
     targetLanguage: SupportedLanguage
   ): string {
+    const trimmedStatement = problem.statement.length > 2500
+      ? problem.statement.substring(0, 2500) + '...[truncated for brevity]'
+      : problem.statement;
+
+    const trimmedExamples = problem.examples.slice(0, 3);
+
     return `<PROBLEM_DATA>
 <TITLE>${problem.title}</TITLE>
 <STATEMENT>
-${problem.statement}
+${trimmedStatement}
 </STATEMENT>
 <INPUT_FORMAT>
 ${problem.inputFormat || 'Standard input'}
@@ -57,7 +63,7 @@ ${problem.outputFormat || 'Standard output'}
 ${problem.constraints || 'None specified'}
 </CONSTRAINTS>
 <EXAMPLES>
-${problem.examples.map((ex, i) => `Example ${i + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}`).join('\n\n')}
+${trimmedExamples.map((ex, i) => `Example ${i + 1}:\nInput: ${ex.input}\nOutput: ${ex.output}`).join('\n\n')}
 </EXAMPLES>
 </PROBLEM_DATA>
 
