@@ -6,6 +6,7 @@ import { DiagnosticsView } from './components/DiagnosticsView';
 import { AnalysisView } from './components/AnalysisView';
 import { SolutionPlanView } from './components/SolutionPlanView';
 import { CodeView } from './components/CodeView';
+import { SettingsModal } from './components/SettingsModal';
 import { TabRuntimeState } from '../runtime/runtime-state';
 import {
   RuntimeStateResponsePayload,
@@ -70,6 +71,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabRuntimeState | null>(null);
   const [allTabs, setAllTabs] = useState<TabRuntimeState[]>([]);
   const [viewMode, setViewMode] = useState<'current' | 'analysis' | 'plan' | 'code' | 'diagnostics' | 'all'>('current');
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // Loading States
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -344,6 +346,7 @@ export const App: React.FC = () => {
     >
       <Header
         onClose={handleClose}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onDragStart={handleDragStart}
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
@@ -425,6 +428,8 @@ export const App: React.FC = () => {
           <TabListView tabs={allTabs} activeTabId={activeTab?.tabId || null} />
         )}
       </main>
+
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
 };

@@ -46,8 +46,10 @@ export class CodeGeneratorService {
     rawProblem: unknown,
     rawPlan: unknown,
     requestedLanguage?: string,
-    requestedVersion?: string
+    requestedVersion?: string,
+    overrideProvider?: AIProvider
   ): Promise<{ generatedCode: GeneratedCode; durationMs: number }> {
+    const activeProvider = overrideProvider || this.provider;
     const startTime = performance.now();
     console.log('[CodePilot][CodeGenerator] Code generation request started');
 
@@ -116,7 +118,7 @@ Do not add any extra closing braces.
 Return source code only.`;
         }
 
-        const result = await this.provider.generateCode(
+        const result = await activeProvider.generateCode(
           problem,
           plan,
           targetLanguage,

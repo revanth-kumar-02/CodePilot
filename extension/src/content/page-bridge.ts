@@ -527,7 +527,13 @@ export function initMonacoPageBridge(): void {
             '*'
           );
 
-          const delay = 12 + Math.floor(Math.random() * 16);
+          // Realistic human-like typing delay (slower & safer)
+          let delay = 28 + Math.floor(Math.random() * 22);
+          if (charToInsert === '\n') {
+            delay = 90 + Math.floor(Math.random() * 45);
+          } else if (charToInsert === ' ' || charToInsert === '\t') {
+            delay = 40 + Math.floor(Math.random() * 20);
+          }
           setTimeout(domStep, delay);
         };
 
@@ -674,8 +680,13 @@ export function initMonacoPageBridge(): void {
           '*'
         );
 
-        // Dynamic human-like typing delay (12ms - 28ms per character)
-        const delay = 12 + Math.floor(Math.random() * 16);
+        // Realistic human-like typing delay (28ms - 50ms per character, pause on newline)
+        let delay = 28 + Math.floor(Math.random() * 22);
+        if (charToInsert === '\n') {
+          delay = 90 + Math.floor(Math.random() * 45);
+        } else if (charToInsert === ' ' || charToInsert === '\t') {
+          delay = 40 + Math.floor(Math.random() * 20);
+        }
         setTimeout(step, delay);
       };
 

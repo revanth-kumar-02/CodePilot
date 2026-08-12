@@ -15,6 +15,7 @@ import { PageFeatureExtractor } from '../detection/feature-extractor';
 import { Logger } from '../shared/utils/logger';
 import { LanguageRegistry } from '../shared/language-registry';
 import { SessionStore, ProblemSession } from '../storage/session-store';
+import { SettingsStorage } from '../storage/settings-storage';
 
 const logger = new Logger('MessageRouter');
 
@@ -392,14 +393,21 @@ export class MessageRouter {
           let session = await SessionStore.getSession(tabId);
           const existingProblem = session?.problem || activeTab.problemExtraction?.result?.problem;
 
-          const performAnalysis = (problemPayload: any) => {
+          const performAnalysis = async (problemPayload: any) => {
             this.runtime.tabManager.updateTab(tabId, {
               aiAnalysis: { status: 'pending', lastUpdated: Date.now() },
             });
 
-            fetch('http://localhost:3000/api/ai/analyze', {
+            const settings = await SettingsStorage.getSettings();
+            const baseUrl = settings.serverUrl || 'http://localhost:3000';
+
+            fetch(`${baseUrl}/api/ai/analyze`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'X-AI-Provider': settings.aiProvider,
+                'X-AI-Api-Key': settings.apiKey,
+              },
               body: JSON.stringify({ problem: problemPayload }),
             })
               .then(async (res) => {
@@ -481,9 +489,16 @@ export class MessageRouter {
             return false;
           }
 
-          fetch('http://localhost:3000/api/ai/reason', {
+          const settings = await SettingsStorage.getSettings();
+          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+
+          fetch(`${baseUrl}/api/ai/reason`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-AI-Provider': settings.aiProvider,
+              'X-AI-Api-Key': settings.apiKey,
+            },
             body: JSON.stringify({ problem: extractedProblem }),
           })
             .then(async (res) => {
@@ -578,9 +593,16 @@ export class MessageRouter {
           );
           await this.syncSessionToTabState(tabId);
 
-          fetch('http://localhost:3000/api/ai/generate-code', {
+          const codeGenSettings = await SettingsStorage.getSettings();
+          const codeGenBaseUrl = codeGenSettings.serverUrl || 'http://localhost:3000';
+
+          fetch(`${codeGenBaseUrl}/api/ai/generate-code`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-AI-Provider': codeGenSettings.aiProvider,
+              'X-AI-Api-Key': codeGenSettings.apiKey,
+            },
             body: JSON.stringify({
               problem: extractedProblem,
               plan: solutionPlan,

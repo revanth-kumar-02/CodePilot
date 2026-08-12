@@ -415,8 +415,34 @@ export const CodeView: React.FC<CodeViewProps> = ({
         </div>
       )}
 
-      {/* 7. Code Display & Scroll Area */}
-      {generatedCode && (
+      {/* 7. Code Generation Loading State */}
+      {currentStatus === 'GENERATING' && (
+        <div className="code-loading-skeleton">
+          <div className="loading-badge">
+            <span className="btn-spinner"></span>
+            <span>Synthesizing {LanguageRegistry.getInfo(selectedLanguage).displayName} Solution...</span>
+          </div>
+
+          <div style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', gap: '6px', flexDirection: 'column', margin: '2px 0' }}>
+            <div>✓ Enforcing Platform Rules ({selectedLanguage === 'java' ? 'Class Solution / Main' : 'Standard Rules'})</div>
+            <div>⚡ Testing Algorithm Logic vs Examples...</div>
+            <div>🛡️ Validating Braces & Zero-Comment Policy...</div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: 0.8 }}>
+            <div className="shimmer-line" style={{ width: '45%' }}></div>
+            <div className="shimmer-line" style={{ width: '70%', marginLeft: '16px' }}></div>
+            <div className="shimmer-line" style={{ width: '85%', marginLeft: '16px' }}></div>
+            <div className="shimmer-line" style={{ width: '60%', marginLeft: '32px' }}></div>
+            <div className="shimmer-line" style={{ width: '75%', marginLeft: '32px' }}></div>
+            <div className="shimmer-line" style={{ width: '40%', marginLeft: '16px' }}></div>
+            <div className="shimmer-line" style={{ width: '25%' }}></div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Code Display & Scroll Area */}
+      {generatedCode && currentStatus !== 'GENERATING' && (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {/* Actions Subbar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -13,14 +13,20 @@ import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 
 export class OpenRouterProvider implements AIProvider {
   public readonly name = 'openrouter';
+  private customApiKey?: string;
+
+  constructor(customApiKey?: string) {
+    this.customApiKey = customApiKey;
+  }
 
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const config = getAIConfig();
+    const apiKey = this.customApiKey || config.openRouterApiKey;
 
-    if (!config.openRouterApiKey) {
+    if (!apiKey) {
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
-        'OpenRouter API key is not configured on the backend environment.',
+        'OpenRouter API key is not provided or configured.',
         500
       );
     }
@@ -40,7 +46,7 @@ export class OpenRouterProvider implements AIProvider {
 
     const url = 'https://openrouter.ai/api/v1/chat/completions';
     const headers = {
-      'Authorization': `Bearer ${config.openRouterApiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': config.siteUrl,
       'X-Title': config.appName,
       'Content-Type': 'application/json',
@@ -122,11 +128,12 @@ export class OpenRouterProvider implements AIProvider {
 
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
     const config = getAIConfig();
+    const apiKey = this.customApiKey || config.openRouterApiKey;
 
-    if (!config.openRouterApiKey) {
+    if (!apiKey) {
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
-        'OpenRouter API key is not configured on the backend environment.',
+        'OpenRouter API key is not provided or configured.',
         500,
         false
       );
@@ -148,7 +155,7 @@ export class OpenRouterProvider implements AIProvider {
 
     const url = 'https://openrouter.ai/api/v1/chat/completions';
     const headers = {
-      'Authorization': `Bearer ${config.openRouterApiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': config.siteUrl,
       'X-Title': config.appName,
       'Content-Type': 'application/json',
@@ -216,12 +223,13 @@ export class OpenRouterProvider implements AIProvider {
   ): Promise<GeneratedCode> {
     const startTime = Date.now();
     const config = getAIConfig();
+    const apiKey = this.customApiKey || config.openRouterApiKey;
     const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 
-    if (!config.openRouterApiKey) {
+    if (!apiKey) {
       throw new AIError(
         'AI_CONFIGURATION_ERROR',
-        'OpenRouter API key is not configured on the backend environment.',
+        'OpenRouter API key is not provided or configured.',
         500
       );
     }
@@ -244,7 +252,7 @@ export class OpenRouterProvider implements AIProvider {
 
     const url = 'https://openrouter.ai/api/v1/chat/completions';
     const headers = {
-      'Authorization': `Bearer ${config.openRouterApiKey}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': config.siteUrl,
       'X-Title': config.appName,
       'Content-Type': 'application/json',

@@ -19,7 +19,8 @@ export class AIService {
     }
   }
 
-  public async analyzeProblem(rawProblem: unknown): Promise<ProblemAnalysis> {
+  public async analyzeProblem(rawProblem: unknown, overrideProvider?: AIProvider): Promise<ProblemAnalysis> {
+    const activeProvider = overrideProvider || this.provider;
     const startTime = performance.now();
     console.log('[CodePilot][AI] Request started');
 
@@ -53,7 +54,7 @@ export class AIService {
 
     // 3. AI Analysis Request
     try {
-      const result = await this.provider.analyzeProblem(problem);
+      const result = await activeProvider.analyzeProblem(problem);
       const durationMs = Math.round(performance.now() - startTime);
 
       console.log('[CodePilot][AI] Request completed');

@@ -6,4 +6,8 @@ export * from './prompt-builder.js';
 export * from './response-parser.js';
 export * from './openrouter-provider.js';
 export * from './groq-provider.js';
+export * from './openai-provider.js';
+export * from './gemini-provider.js';
+export * from './anthropic-provider.js';
 export * from './mock-provider.js';
+export * from './provider-factory.js';

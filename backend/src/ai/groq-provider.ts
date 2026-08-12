@@ -14,11 +14,17 @@ import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 
 export class GroqProvider implements AIProvider {
   public readonly name = 'groq';
-  private openRouterProvider = new OpenRouterProvider();
+  private customApiKey?: string;
+  private openRouterProvider: OpenRouterProvider;
+
+  constructor(customApiKey?: string) {
+    this.customApiKey = customApiKey;
+    this.openRouterProvider = new OpenRouterProvider(customApiKey);
+  }
 
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const config = getAIConfig();
-    const apiKey = config.groqApiKey;
+    const apiKey = this.customApiKey || config.groqApiKey;
     const model = config.groqFastModel;
 
     if (!apiKey) {
@@ -69,7 +75,7 @@ export class GroqProvider implements AIProvider {
 
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
     const config = getAIConfig();
-    const apiKey = config.groqApiKey;
+    const apiKey = this.customApiKey || config.groqApiKey;
     const model = config.groqReasoningModel;
 
     if (!apiKey) {
@@ -128,7 +134,7 @@ export class GroqProvider implements AIProvider {
   ): Promise<GeneratedCode> {
     const startTime = Date.now();
     const config = getAIConfig();
-    const apiKey = config.groqApiKey;
+    const apiKey = this.customApiKey || config.groqApiKey;
     let model = config.groqFastModel;
     const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 

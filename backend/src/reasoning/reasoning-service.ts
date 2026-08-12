@@ -30,7 +30,8 @@ export class ReasoningService {
     }
   }
 
-  public async reasonProblem(rawProblem: unknown): Promise<ReasoningExecutionResult> {
+  public async reasonProblem(rawProblem: unknown, overrideProvider?: AIProvider): Promise<ReasoningExecutionResult> {
+    const activeProvider = overrideProvider || this.provider;
     const startTime = performance.now();
     const requestId = `req_${++this.currentRequestId}_${Date.now()}`;
     const capturedRequestId = this.currentRequestId;
@@ -82,7 +83,7 @@ export class ReasoningService {
       console.log(`[CodePilot][Reasoning][${requestId}] Attempt ${attempt}/${maxAttempts} (Recovery: ${isRecoveryAttempt})`);
 
       try {
-        const plan = await this.provider.reasonProblem(problem, isRecoveryAttempt);
+        const plan = await activeProvider.reasonProblem(problem, isRecoveryAttempt);
 
         // Perform final self-consistency check
         const validation = ConsistencyChecker.check(plan, problem);
