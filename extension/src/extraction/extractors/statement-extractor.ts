@@ -6,9 +6,12 @@ export class StatementExtractor {
   public static extract(container: Element, doc?: Document): { statement: string; fieldResult: ExtractionFieldResult } {
     let statement = this.extractFromElement(container);
 
-    // Fallback: If container extraction returned statement < 30 chars, search doc.body
-    if ((!statement || statement.length < 30) && doc && doc.body && container !== doc.body) {
-      statement = this.extractFromElement(doc.body);
+    // Fallback: If container extraction returned statement < 80 chars, search doc.body
+    if ((!statement || statement.length < 80) && doc && doc.body && container !== doc.body) {
+      const bodyStatement = this.extractFromElement(doc.body);
+      if (bodyStatement && bodyStatement.length > (statement ? statement.length : 0)) {
+        statement = bodyStatement;
+      }
     }
 
     if (statement && statement.length >= 10) {

@@ -67,7 +67,7 @@ export class ProblemExtractor {
     const languageRes = LanguageExtractor.extract(targetDoc);
 
     // 4. Web-Scraping Text Fallback (if DOM heuristics miss examples or problem statement)
-    if (examplesRes.examples.length === 0 || !statementRes.statement || statementRes.statement.length < 20 || !constraintsRes.constraints) {
+    if (examplesRes.examples.length === 0 || !statementRes.statement || statementRes.statement.length < 80 || !constraintsRes.constraints) {
       const textToScrape =
         (container as HTMLElement).innerText ||
         (targetDoc.body ? targetDoc.body.innerText : '') ||
@@ -89,7 +89,7 @@ export class ProblemExtractor {
           };
         }
 
-        if ((!statementRes.statement || statementRes.statement.length < 20) && scraped.statement) {
+        if ((!statementRes.statement || statementRes.statement.length < 80) && scraped.statement) {
           statementRes = {
             statement: scraped.statement,
             fieldResult: {
