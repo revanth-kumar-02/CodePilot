@@ -77,6 +77,45 @@ export class ExamplesExtractor {
       }
     }
 
+    // 1b. Check for HTML Tables representing Test Cases (common in HackerRank certification tests)
+    const tables = Array.from(root.querySelectorAll('table')).filter(
+      (tbl) => !tbl.closest('.monaco-editor, .CodeMirror, .ace_editor')
+    );
+
+    for (const tbl of tables) {
+      const headers = Array.from(tbl.querySelectorAll('th')).map((th) => (th.textContent || '').trim().toLowerCase());
+      const hasInputHeader = headers.some((h) => h.includes('input') || h.includes('type') || h.includes('a') || h.includes('b') || h.includes('test case'));
+      const hasOutputHeader = headers.some((h) => h.includes('output') || h.includes('result') || h.includes('explanation'));
+
+      if (hasInputHeader || hasOutputHeader) {
+        const rows = Array.from(tbl.querySelectorAll('tr')).slice(1);
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td')).map((td) => (td.textContent || '').trim());
+          if (cells.length >= 2) {
+            let inputVal = '';
+            let outputVal = '';
+            let expVal: string | null = null;
+
+            if (cells.length === 2) {
+              inputVal = cells[0];
+              outputVal = cells[1];
+            } else if (cells.length === 3) {
+              inputVal = `Input: ${cells[0]}, ${cells[1]}`;
+              outputVal = cells[2];
+            } else if (cells.length >= 4) {
+              // Standard HackerRank Test Case Table: [Test Case, Type, A, B, Output, Explanation]
+              const inputs = cells.slice(0, cells.length - 2).join(', ');
+              inputVal = inputs;
+              outputVal = cells[cells.length - 2];
+              expVal = cells[cells.length - 1];
+            }
+
+            addExample(inputVal, outputVal, expVal);
+          }
+        }
+      }
+    }
+
     if (examples.length > 0) return examples;
 
     // 2. DOM Label-Value Traversal (strong/b/span labels for Input: and Output:)
