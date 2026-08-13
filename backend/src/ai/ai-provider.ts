@@ -20,6 +20,7 @@ export type AIErrorCode =
   | 'CODE_COMMENT_VIOLATION'
   | 'CODE_VALIDATION_ERROR'
   | 'CODE_STRUCTURE_INVALID'
+  | 'CODE_REPAIR_FAILED'
   | 'AI_UNKNOWN_ERROR';
 
 export class AIError extends Error {

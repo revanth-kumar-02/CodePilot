@@ -1,30 +1,23 @@
-import { AIProvider, OpenRouterProvider, GroqProvider, MockAIProvider, ProblemInput, ProblemAnalysis, ProblemSchema, AIError } from '../ai/index.js';
-import { getAIConfig } from '../ai/model-config.js';
+import { ProblemInput, ProblemSchema, AIError, AIProviderRouter, ProblemAnalysis, AIProvider } from '../ai/index.js';
 
 export class AIService {
-  private provider: AIProvider;
+  private router?: AIProviderRouter;
+  private legacyProvider?: AIProvider;
 
-  constructor(provider?: AIProvider) {
-    if (provider) {
-      this.provider = provider;
-    } else if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_AI === 'true') {
-      this.provider = new MockAIProvider();
+  constructor(providerOrRouter?: AIProvider | AIProviderRouter) {
+    if (providerOrRouter instanceof AIProviderRouter) {
+      this.router = providerOrRouter;
+    } else if (providerOrRouter) {
+      this.legacyProvider = providerOrRouter;
     } else {
-      const config = getAIConfig();
-      if (config.provider === 'groq' || config.groqApiKey) {
-        this.provider = new GroqProvider();
-      } else {
-        this.provider = new OpenRouterProvider();
-      }
+      this.router = new AIProviderRouter();
     }
   }
 
-  public async analyzeProblem(rawProblem: unknown, overrideProvider?: AIProvider): Promise<ProblemAnalysis> {
-    const activeProvider = overrideProvider || this.provider;
+  public async analyzeProblem(rawProblem: unknown, overrideApiKeyOrProvider?: string | AIProvider): Promise<ProblemAnalysis> {
     const startTime = performance.now();
-    console.log('[CodePilot][AI] Request started');
+    console.log('[CodePilot][AI] Analysis request started');
 
-    // 1. Schema Validation
     const validation = ProblemSchema.safeParse(rawProblem);
     if (!validation.success) {
       console.warn('[CodePilot][AI] Validation failed for incoming problem');
@@ -37,7 +30,6 @@ export class AIService {
 
     const problem: ProblemInput = validation.data;
 
-    // 2. Payload Size Limit Checks
     const serializedSize = JSON.stringify(problem).length;
     if (problem.title.length > 500 || problem.statement.length > 25000 || serializedSize > 60000) {
       console.warn('[CodePilot][AI] Problem payload size limits exceeded');
@@ -48,23 +40,23 @@ export class AIService {
       );
     }
 
-    const config = getAIConfig();
-    console.log(`[CodePilot][AI] Provider: ${this.provider.name}`);
-    console.log(`[CodePilot][AI] Model: ${this.provider.name === 'groq' ? config.groqModel : config.model}`);
-
-    // 3. AI Analysis Request
     try {
-      const result = await activeProvider.analyzeProblem(problem);
+      let result: ProblemAnalysis;
+      if (typeof overrideApiKeyOrProvider === 'object' && overrideApiKeyOrProvider !== null) {
+        result = await overrideApiKeyOrProvider.analyzeProblem(problem);
+      } else if (this.legacyProvider) {
+        result = await this.legacyProvider.analyzeProblem(problem);
+      } else {
+        const apiKey = typeof overrideApiKeyOrProvider === 'string' ? overrideApiKeyOrProvider : undefined;
+        result = await (this.router || new AIProviderRouter()).analyzeProblem(problem, apiKey);
+      }
+
       const durationMs = Math.round(performance.now() - startTime);
-
-      console.log('[CodePilot][AI] Request completed');
-      console.log(`[CodePilot][AI] Duration: ${durationMs}ms`);
-      console.log('[CodePilot][AI] Validation: PASS');
-
+      console.log('[CodePilot][AI] Analysis request completed in', durationMs, 'ms');
       return result;
     } catch (err) {
       const durationMs = Math.round(performance.now() - startTime);
-      console.error(`[CodePilot][AI] Request failed after ${durationMs}ms:`, err instanceof Error ? err.message : err);
+      console.error(`[CodePilot][AI] Analysis request failed after ${durationMs}ms:`, err instanceof Error ? err.message : err);
       throw err;
     }
   }

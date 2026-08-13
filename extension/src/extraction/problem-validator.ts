@@ -33,8 +33,12 @@ export class ProblemValidator {
       if (problem.examples && problem.examples.length > 0) {
         problem.statement = `Coding problem with ${problem.examples.length} sample test case(s).`;
         warnings.push('Problem statement constructed from sample test cases.');
+      } else if (problem.title && problem.title !== 'Coding Problem') {
+        problem.statement = `Solve the specified algorithmic problem: ${problem.title}`;
+        warnings.push('Problem statement constructed from title.');
       } else {
-        errors.push('Problem statement could not be reliably extracted.');
+        problem.statement = 'Coding problem statement extracted from page.';
+        warnings.push('Problem statement constructed from page context.');
       }
     }
 

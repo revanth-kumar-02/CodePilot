@@ -13,6 +13,7 @@ import { ConfidenceCalculator } from './confidence-calculator';
 import { ProblemAssembler } from './problem-assembler';
 import { ProblemValidator } from './problem-validator';
 import { TextScraperExtractor } from './text-scraper-extractor';
+import { CodeChefProblemExtractor } from './extractors/codechef-extractor';
 
 export class ProblemExtractor {
   public static extract(
@@ -37,16 +38,28 @@ export class ProblemExtractor {
 
     // 1. Extraction Eligibility Check
     if (detectionResult && detectionResult.type === 'normal') {
-      const endTime = performance.now();
-      return {
-        status: 'failed',
-        problem: null,
-        confidence: 0,
-        fields: [],
-        warnings: [],
-        errors: ['Page is not classified as a coding environment.'],
-        durationMs: Number((endTime - startTime).toFixed(2)),
-      };
+      const bodyText = (targetDoc.body ? targetDoc.body.innerText : '') || targetDoc.body?.textContent || '';
+      const hasProblemKeywords = /example|sample|input:|output:|constraints|problem/i.test(bodyText);
+      if (!hasProblemKeywords && bodyText.length < 100) {
+        const endTime = performance.now();
+        return {
+          status: 'failed',
+          problem: null,
+          confidence: 0,
+          fields: [],
+          warnings: [],
+          errors: ['Page is not classified as a coding environment.'],
+          durationMs: Number((endTime - startTime).toFixed(2)),
+        };
+      }
+    }
+
+    // 2. Dedicated CodeChef Extraction Route
+    if (CodeChefProblemExtractor.isCodeChef(targetDoc)) {
+      const codeChefResult = CodeChefProblemExtractor.extract(targetDoc);
+      if (codeChefResult.status === 'success') {
+        return codeChefResult;
+      }
     }
 
     // 2. Identify candidate container

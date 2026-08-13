@@ -19,6 +19,15 @@ export class SignalRegistry {
       { key: 'sample output', id: 'content-sample-output', score: 0.25 },
       { key: 'test cases', id: 'content-test-cases', score: 0.2 },
       { key: 'explanation', id: 'content-explanation', score: 0.1 },
+      { key: 'example 1', id: 'content-example-1', score: 0.3 },
+      { key: 'example 2', id: 'content-example-2', score: 0.2 },
+      { key: 'example:', id: 'content-example-colon', score: 0.25 },
+      { key: 'examples', id: 'content-examples', score: 0.2 },
+      { key: 'input:', id: 'content-input-colon', score: 0.2 },
+      { key: 'output:', id: 'content-output-colon', score: 0.2 },
+      { key: 'description', id: 'content-description', score: 0.15 },
+      { key: 'time complexity', id: 'content-time-complexity', score: 0.15 },
+      { key: 'space complexity', id: 'content-space-complexity', score: 0.15 },
     ];
 
     contentKeywords.forEach((item) => {
@@ -59,16 +68,32 @@ export class SignalRegistry {
       });
     }
 
-    // 4. URL Pattern Signals (HackerRank, LeetCode, CodeChef, Codeforces, etc.)
+    // 4. URL Pattern Signals (HackerRank, LeetCode, CodeChef, Codeforces, GeeksforGeeks, etc.)
     const urlLower = snapshot.url.toLowerCase();
-    if (urlLower.includes('hackerrank.com/test/') || urlLower.includes('hackerrank.com/challenges/')) {
-      signals.push({
-        id: 'url-hackerrank-problem',
-        category: 'content',
-        score: 0.6,
-        evidence: 'URL matches HackerRank test/challenge pattern',
-      });
-    } else if (urlLower.includes('leetcode.com/problems/') || urlLower.includes('codechef.com/problems/')) {
+    const isProblemUrl =
+      urlLower.includes('logicify') ||
+      urlLower.includes('hackerrank.com/test/') ||
+      urlLower.includes('hackerrank.com/challenges/') ||
+      urlLower.includes('leetcode.com/problems/') ||
+      urlLower.includes('codechef.com/problems/') ||
+      urlLower.includes('codeforces.com/problemset/problem/') ||
+      urlLower.includes('codeforces.com/contest/') ||
+      urlLower.includes('geeksforgeeks.org/problems/') ||
+      urlLower.includes('atcoder.jp/contests/') ||
+      urlLower.includes('/problems/') ||
+      urlLower.includes('/problem/') ||
+      urlLower.includes('/questions/') ||
+      urlLower.includes('/question/') ||
+      urlLower.includes('/challenges/') ||
+      urlLower.includes('/challenge/') ||
+      urlLower.includes('/tasks/') ||
+      urlLower.includes('/task/') ||
+      urlLower.includes('/assessment/') ||
+      urlLower.includes('/coding/') ||
+      urlLower.includes('/lab/') ||
+      urlLower.includes('/practice/');
+
+    if (isProblemUrl) {
       signals.push({
         id: 'url-platform-problem',
         category: 'content',

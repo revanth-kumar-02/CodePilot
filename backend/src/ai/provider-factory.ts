@@ -9,6 +9,10 @@ import { getAIConfig } from './model-config.js';
 
 export class ProviderFactory {
   public static getProvider(providerName?: string, apiKey?: string): AIProvider {
+    if (process.env.NODE_ENV === 'test' && process.env.USE_MOCK_AI !== 'false') {
+      return new MockAIProvider();
+    }
+
     const config = getAIConfig();
     const effectiveProvider = (providerName || process.env.AI_PROVIDER || config.provider || 'groq').toLowerCase();
 

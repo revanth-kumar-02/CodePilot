@@ -1,6 +1,5 @@
-import { AIProvider, OpenRouterProvider, GroqProvider, MockAIProvider, ProblemInput, ProblemSchema, AIError } from '../ai/index.js';
+import { ProblemInput, ProblemSchema, AIError, AIProviderRouter, AIProvider } from '../ai/index.js';
 import { SolutionPlan, ReasoningValidation } from './schemas.js';
-import { getAIConfig } from '../ai/model-config.js';
 import { ConsistencyChecker } from './consistency-checker.js';
 
 export interface ReasoningExecutionResult {
@@ -12,33 +11,27 @@ export interface ReasoningExecutionResult {
 }
 
 export class ReasoningService {
-  private provider: AIProvider;
+  private router?: AIProviderRouter;
+  private legacyProvider?: AIProvider;
   private currentRequestId: number = 0;
 
-  constructor(provider?: AIProvider) {
-    if (provider) {
-      this.provider = provider;
-    } else if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_AI === 'true') {
-      this.provider = new MockAIProvider();
+  constructor(providerOrRouter?: AIProvider | AIProviderRouter) {
+    if (providerOrRouter instanceof AIProviderRouter) {
+      this.router = providerOrRouter;
+    } else if (providerOrRouter) {
+      this.legacyProvider = providerOrRouter;
     } else {
-      const config = getAIConfig();
-      if (config.provider === 'groq' || config.groqApiKey) {
-        this.provider = new GroqProvider();
-      } else {
-        this.provider = new OpenRouterProvider();
-      }
+      this.router = new AIProviderRouter();
     }
   }
 
-  public async reasonProblem(rawProblem: unknown, overrideProvider?: AIProvider): Promise<ReasoningExecutionResult> {
-    const activeProvider = overrideProvider || this.provider;
+  public async reasonProblem(rawProblem: unknown, overrideApiKeyOrProvider?: string | AIProvider): Promise<ReasoningExecutionResult> {
     const startTime = performance.now();
     const requestId = `req_${++this.currentRequestId}_${Date.now()}`;
     const capturedRequestId = this.currentRequestId;
 
     console.log(`[CodePilot][Reasoning][${requestId}] Reasoning request started`);
 
-    // 1. Schema Validation
     const validationResult = ProblemSchema.safeParse(rawProblem);
     if (!validationResult.success) {
       console.warn(`[CodePilot][Reasoning][${requestId}] Validation failed for incoming problem`);
@@ -52,7 +45,6 @@ export class ReasoningService {
 
     const problem: ProblemInput = validationResult.data;
 
-    // 2. Payload Size Checks
     const serializedSize = JSON.stringify(problem).length;
     if (problem.title.length > 500 || problem.statement.length > 25000 || serializedSize > 60000) {
       console.warn(`[CodePilot][Reasoning][${requestId}] Problem payload size limits exceeded`);
@@ -64,16 +56,10 @@ export class ReasoningService {
       );
     }
 
-    const config = getAIConfig();
-    const modelName = this.provider.name === 'groq' ? config.groqModel : config.model;
-    console.log(`[CodePilot][Reasoning][${requestId}] Provider: ${this.provider.name}`);
-    console.log(`[CodePilot][Reasoning][${requestId}] Model: ${modelName}`);
-
     const maxAttempts = 2;
     let lastError: AIError | null = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      // Deduplication check: if a new request was issued while this attempt was running, abandon stale request
       if (this.currentRequestId !== capturedRequestId) {
         console.warn(`[CodePilot][Reasoning][${requestId}] Stale request abandoned (newer request active)`);
         throw new AIError('AI_UNKNOWN_ERROR', 'Reasoning request superseded by newer request.', 409, false);
@@ -83,9 +69,16 @@ export class ReasoningService {
       console.log(`[CodePilot][Reasoning][${requestId}] Attempt ${attempt}/${maxAttempts} (Recovery: ${isRecoveryAttempt})`);
 
       try {
-        const plan = await activeProvider.reasonProblem(problem, isRecoveryAttempt);
+        let plan: SolutionPlan;
+        if (typeof overrideApiKeyOrProvider === 'object' && overrideApiKeyOrProvider !== null) {
+          plan = await overrideApiKeyOrProvider.reasonProblem(problem, isRecoveryAttempt);
+        } else if (this.legacyProvider) {
+          plan = await this.legacyProvider.reasonProblem(problem, isRecoveryAttempt);
+        } else {
+          const apiKey = typeof overrideApiKeyOrProvider === 'string' ? overrideApiKeyOrProvider : undefined;
+          plan = await (this.router || new AIProviderRouter()).generateSolutionPlan(problem, isRecoveryAttempt, apiKey);
+        }
 
-        // Perform final self-consistency check
         const validation = ConsistencyChecker.check(plan, problem);
 
         if (!validation.valid && plan.status === 'ready') {
@@ -98,9 +91,6 @@ export class ReasoningService {
         const reasoningDurationMs = Math.round(performance.now() - startTime);
 
         console.log(`[CodePilot][Reasoning][${requestId}] Reasoning completed on attempt ${attempt}`);
-        console.log(`[CodePilot][Reasoning][${requestId}] Duration: ${reasoningDurationMs}ms`);
-        console.log(`[CodePilot][Reasoning][${requestId}] Plan Status: ${plan.status}`);
-
         return {
           plan,
           validation,
@@ -114,26 +104,21 @@ export class ReasoningService {
           : new AIError('AI_UNKNOWN_ERROR', err instanceof Error ? err.message : String(err), 500, false);
 
         console.warn(`[CodePilot][Reasoning][${requestId}] Attempt ${attempt} failed with [${aiErr.code}]: ${aiErr.message}`);
-
         lastError = aiErr;
 
-        // If error is permanent (non-retryable) or attempt limit reached, stop immediately
         if (!aiErr.retryable || attempt >= maxAttempts) {
           break;
         }
 
         if (aiErr.code === 'AI_RATE_LIMITED') {
-          console.log(`[CodePilot][Reasoning][${requestId}] Rate limited. Waiting 3s before attempt ${attempt + 1}...`);
-          await new Promise((res) => setTimeout(res, 3000));
-        } else {
-          console.log(`[CodePilot][Reasoning][${requestId}] Preparing controlled recovery attempt ${attempt + 1}...`);
+          break;
         }
       }
     }
 
     const reasoningDurationMs = Math.round(performance.now() - startTime);
-    console.error(`[CodePilot][Reasoning][${requestId}] Request failed permanently after ${reasoningDurationMs}ms with [${lastError?.code}]:`, lastError?.message);
+    console.error(`[CodePilot][Reasoning][${requestId}] Request failed permanently after ${reasoningDurationMs}ms:`, lastError?.message);
 
-    throw lastError || new AIError('AI_UNKNOWN_ERROR', 'Failed to generate solution plan after 2 attempts.', 500, false);
+    throw lastError || new AIError('AI_UNKNOWN_ERROR', 'Failed to generate solution plan.', 500, false);
   }
 }

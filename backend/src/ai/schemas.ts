@@ -59,3 +59,25 @@ export const ProblemAnalysisSchema = z.object({
 });
 
 export type ProblemAnalysis = z.infer<typeof ProblemAnalysisSchema>;
+
+export const ErrorClassificationEnum = z.enum([
+  'Syntax Error',
+  'Compilation Error',
+  'Method Signature',
+  'Runtime Error',
+  'Wrong Answer',
+  'Time Limit',
+  'Memory Limit',
+  'Unknown',
+]);
+
+export type ErrorClassification = z.infer<typeof ErrorClassificationEnum>;
+
+export const ErrorAnalysisResultSchema = z.object({
+  classification: ErrorClassificationEnum,
+  explanation: z.string(),
+  rootCause: z.string(),
+  suggestedFix: z.string(),
+});
+
+export type ErrorAnalysisResult = z.infer<typeof ErrorAnalysisResultSchema>;

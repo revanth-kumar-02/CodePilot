@@ -7,18 +7,41 @@ export class CandidateDetector {
       return { querySelectorAll: () => [], textContent: '' } as any;
     }
 
-    // 1. Explicit platform container selectors (LeetCode, HackerRank, Codeforces, LearnLogicify)
+    // 1. Explicit platform container selectors (LeetCode, HackerRank, Codeforces, GeeksforGeeks, CodeChef, AtCoder, LearnLogicify & LMS Portals)
     const prioritySelectors = [
       '[data-track-load="description_content"]',
+      '[data-key="description"]',
       '.elfjS',
       '[class*="description_content"]',
+      '[class*="description__"]',
       '.challenge-body-html',
       '.question-text',
       '[class*="question-text"]',
+      '[class*="question-body"]',
+      '[class*="question_body"]',
+      '[class*="question-details"]',
+      '[class*="question-card"]',
+      '[class*="problem-body"]',
+      '[class*="problem-details"]',
+      '[class*="problem-description"]',
+      '[class*="task-description"]',
+      '#question-container',
+      '.question-container',
+      '.questionContainer',
+      '#problem-container',
+      '.problem-container',
+      '.problemContainer',
+      '#question',
+      '.markdown-body',
+      '.md-content',
+      '[data-testid*="question"]',
+      '[data-testid*="problem"]',
+      '[data-testid*="description"]',
       '[class*="challenge-body"]',
       '[class*="ps-content"]',
       '.question-statement',
-      '.problem-description',
+      '.problems_problem_content',
+      '#task-statement',
       '.question-content',
       '.problem-statement',
       '#problem-statement',
@@ -32,7 +55,7 @@ export class CandidateDetector {
     for (const sel of prioritySelectors) {
       try {
         const el = doc.querySelector(sel);
-        if (el && (el.textContent || '').trim().length > 80) {
+        if (el && (el.textContent || '').trim().length > 30) {
           return el;
         }
       } catch {
@@ -55,7 +78,7 @@ export class CandidateDetector {
 
     scored.sort((a, b) => b.score - a.score);
 
-    if (scored[0] && scored[0].score > 5) {
+    if (scored[0] && scored[0].score >= 2) {
       return scored[0].element;
     }
 
@@ -85,11 +108,20 @@ export class CandidateDetector {
   private static getCandidateElements(doc: Document): Element[] {
     const selectors = [
       '[data-track-load="description_content"]',
+      '.question-body',
+      '.question-details',
+      '.question-container',
+      '#question-container',
+      '.problem-container',
+      '#problem-container',
+      '.problem-description',
+      '.task-description',
+      '.markdown-body',
+      '.card-body',
       'main',
       'article',
       'section',
       '[role="main"]',
-      '.problem-description',
       '.question-content',
       '.problem-statement',
       '#problem-statement',
@@ -106,8 +138,8 @@ export class CandidateDetector {
         matches.forEach((el) => {
           if (
             !seen.has(el) &&
-            !el.closest('header, nav, footer, aside, .monaco-editor, .CodeMirror') &&
-            (el.textContent || '').length > 80
+            !el.closest('header, nav, footer, aside, .monaco-editor, .CodeMirror, .ace_editor') &&
+            (el.textContent || '').length > 40
           ) {
             seen.add(el);
             elements.push(el);
@@ -127,6 +159,10 @@ export class CandidateDetector {
 
     const keywords = [
       'problem statement',
+      'question',
+      'problem',
+      'task',
+      'description',
       'input format',
       'output format',
       'constraints',
@@ -141,7 +177,7 @@ export class CandidateDetector {
     ];
 
     keywords.forEach((kw) => {
-      if (text.includes(kw)) score += 3;
+      if (text.includes(kw)) score += 2;
     });
 
     const headingCount = el.querySelectorAll('h1, h2, h3, h4, h5').length;

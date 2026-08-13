@@ -40,7 +40,7 @@ export class StatementExtractor {
   private static extractFromElement(root: Element): string {
     // 1. Explicit Problem Description / Question Containers (must have >30 chars of real problem text)
     const explicitContainers = Array.from(
-      root.querySelectorAll('.qtext, .formulation, [data-track-load="description_content"], .elfjS, .challenge-body-html, [class*="question-text"], [class*="challenge-body"], [class*="ps-content"], .problem-description, .question-statement, .problem-statement, .coding-question')
+      root.querySelectorAll('.qtext, .formulation, [data-track-load="description_content"], [data-key="description"], .elfjS, .challenge-body-html, [class*="question-text"], [class*="question-body"], [class*="question-details"], [class*="question-card"], [class*="problem-body"], [class*="problem-details"], [class*="task-description"], #question-container, .question-container, #problem-container, .problem-container, .markdown-body, [data-testid*="question"], [data-testid*="problem"], [data-testid*="description"], [class*="challenge-body"], [class*="ps-content"], .problem-description, .problems_problem_content, #task-statement, .question-statement, .problem-statement, .coding-question')
     );
 
     if (explicitContainers.length > 0) {

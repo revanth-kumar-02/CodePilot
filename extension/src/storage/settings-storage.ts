@@ -3,12 +3,16 @@ export type SupportedAIProvider = 'groq' | 'openrouter' | 'openai' | 'gemini' | 
 export interface UserSettings {
   aiProvider: SupportedAIProvider;
   apiKey: string;
+  groqAnalysisKey?: string;
+  groqCodeKey?: string;
   serverUrl: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
   aiProvider: 'groq',
   apiKey: '',
+  groqAnalysisKey: '',
+  groqCodeKey: '',
   serverUrl: 'http://localhost:3000',
 };
 

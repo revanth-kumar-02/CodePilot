@@ -453,7 +453,9 @@ export class MockAIProvider implements AIProvider {
     const problemText = `${problem.title} ${problem.statement}`.toLowerCase();
     
     let javaCode: string;
-    if (problemText.includes('parenthesis') || problemText.includes('checkvalidstring')) {
+    if (problemText.includes('multiply') || (retryInstruction && retryInstruction.toLowerCase().includes('multiply'))) {
+      javaCode = `public class ${javaClass} {\n    public String multiply(String num1, String num2) {\n        return "";\n    }\n}`;
+    } else if (problemText.includes('parenthesis') || problemText.includes('checkvalidstring')) {
       javaCode = `public class ${javaClass} {\n    public boolean checkValidString(String s) {\n        int low = 0;\n        int high = 0;\n        for (int i = 0; i < s.length(); i++) {\n            char c = s.charAt(i);\n            if (c == '(') {\n                low++;\n                high++;\n            } else if (c == ')') {\n                low--;\n                high--;\n            } else if (c == '*') {\n                low--;\n                high++;\n            }\n            if (high < 0) return false;\n            if (low < 0) low = 0;\n        }\n        return low == 0;\n    }\n}`;
     } else if (activeRule.requiresMain) {
       javaCode = `import java.util.Scanner;\n\npublic class ${javaClass} {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        if (!scanner.hasNextInt()) return;\n        int n = scanner.nextInt();\n        long[] arr = new long[n];\n        for (int i = 0; i < n; i++) {\n            arr[i] = scanner.nextLong();\n        }\n        long maxVal = arr[0];\n        for (int i = 1; i < n; i++) {\n            if (arr[i] > maxVal) {\n                maxVal = arr[i];\n            }\n        }\n        System.out.println(maxVal);\n    }\n}`;

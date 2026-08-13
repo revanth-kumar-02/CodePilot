@@ -186,7 +186,7 @@ describe('Phase 5: Coding Reasoning & Solution Planning Engine Tests', () => {
       try {
         const response = await fetch(`http://localhost:${port}/api/ai/reason`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-AI-Provider': 'mock' },
           body: JSON.stringify({ problem: sampleProblem }),
         });
 

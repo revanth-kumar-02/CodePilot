@@ -1,19 +1,39 @@
-import { EditorAdapter, InsertionResult } from './types';
+import { EditorAdapter, InsertionResult, InsertionOptions } from './types';
 import { MonacoAdapter } from './monaco-adapter';
+import { CodeChefAdapter } from './codechef-adapter';
 import { CodeMirrorAdapter } from './codemirror-adapter';
 import { AceAdapter } from './ace-adapter';
 import { ContentEditableAdapter } from './contenteditable-adapter';
 import { TextareaAdapter } from './textarea-adapter';
 import { LanguageRegistry, SupportedLanguage } from '../../shared/language-registry';
+import { JavaStructureValidator } from '../../shared/java-structure-validator.ts';
+import { Logger } from '../../shared/utils/logger';
+
+const logger = new Logger('EditorManager');
 
 export class EditorManager {
   private static adapters: EditorAdapter[] = [
     new MonacoAdapter(),
+    new CodeChefAdapter(),
     new CodeMirrorAdapter(),
     new AceAdapter(),
     new ContentEditableAdapter(),
     new TextareaAdapter(),
   ];
+
+  private static isInserting = false;
+  private static activeInsertionId: string | null = null;
+  private static completedInsertionIds = new Set<string>();
+  private static activeCancelledIds = new Set<string>();
+  private static isCodePilotInserting = false;
+
+  public static isCodePilotWriting(): boolean {
+    return this.isCodePilotInserting || this.isInserting;
+  }
+
+  public static getActiveInsertionId(): string | null {
+    return this.activeInsertionId;
+  }
 
   public static getActiveAdapter(): EditorAdapter | null {
     for (const adapter of this.adapters) {
@@ -23,8 +43,6 @@ export class EditorManager {
     }
     return null;
   }
-
-  private static activeCancelledIds = new Set<string>();
 
   public static cancelInsertion(insertionId?: string): void {
     if (insertionId) {
@@ -40,67 +58,139 @@ export class EditorManager {
     return code.replace(/\r\n/g, '\n').trim();
   }
 
+  public static validateJavaStructure(code: string, platform?: string): { valid: boolean; reason?: string } {
+    const norm = this.normalizeCode(code);
+
+    // 1. Check for duplicate public class declarations
+    const publicClassMatches = norm.match(/public\s+class\s+\w+/g) || [];
+    if (publicClassMatches.length > 1) {
+      return { valid: false, reason: `Multiple public class declarations found: ${publicClassMatches.length}` };
+    }
+
+    // 2. Check for duplicate 'public class Main'
+    const mainMatches = norm.match(/public\s+class\s+Main/g) || [];
+    if (mainMatches.length > 1) {
+      return { valid: false, reason: `Duplicate 'public class Main' declarations detected: ${mainMatches.length}` };
+    }
+
+    // 3. Run JavaStructureValidator if available
+    const expectedClass = platform === 'leetcode' ? 'Solution' : 'Main';
+    const validation = JavaStructureValidator.validate(norm, expectedClass as any);
+    if (!validation.valid) {
+      return { valid: false, reason: validation.issues.join('; ') };
+    }
+
+    return { valid: true };
+  }
+
   public static async insertCode(
     code: string,
     targetLanguage?: SupportedLanguage,
-    forceInsert: boolean = false,
-    options?: import('./types').InsertionOptions
+    _forceInsert: boolean = false,
+    options?: InsertionOptions
   ): Promise<InsertionResult> {
-    const adapter = this.getActiveAdapter();
-    if (!adapter) {
+    const insertionId = options?.insertionId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ins_${Date.now()}`);
+
+    // 1. Single Insert Guarantee & Insertion Lock
+    if (this.isInserting || (insertionId && this.completedInsertionIds.has(insertionId))) {
+      logger.warn(`Insertion ID: ${insertionId} | Duplicate Guard: BLOCKED | Final: DUPLICATE_INSERTION_BLOCKED`);
       return {
         success: false,
         editorType: 'unknown',
-        errorCode: 'EDITOR_NOT_FOUND',
-        message: 'EDITOR_NOT_FOUND: No supported code editor detected on page.',
+        errorCode: 'DUPLICATE_INSERTION_BLOCKED',
+        message: 'DUPLICATE_INSERTION_BLOCKED: Insertion operation already in progress or completed for this ID.',
       };
     }
 
-    if (options?.insertionId) {
-      this.activeCancelledIds.delete(options.insertionId);
-    }
+    this.isInserting = true;
+    this.activeInsertionId = insertionId;
+    this.isCodePilotInserting = true;
 
-    // 1. Language Mismatch Check
-    if (targetLanguage && !forceInsert && typeof adapter.detectLanguage === 'function') {
-      const detectedRaw = await adapter.detectLanguage();
-      if (detectedRaw) {
-        const detectedNormalized = LanguageRegistry.normalize(detectedRaw);
-        if (detectedNormalized !== targetLanguage) {
+    try {
+      const adapter = this.getActiveAdapter();
+      const platformName = typeof window !== 'undefined' && window.location ? window.location.hostname : 'unknown';
+
+      const currentActiveId = this.activeInsertionId;
+      logger.info(`Insertion ID: ${insertionId} (active: ${currentActiveId})\nPlatform: ${platformName}\nEditor: ${adapter?.type || 'none'}\nRequest: START`);
+
+      if (!adapter) {
+        logger.warn(`Insertion ID: ${insertionId} | Editor: NONE | Final: FAILED`);
+        return {
+          success: false,
+          editorType: 'unknown',
+          errorCode: 'EDITOR_NOT_FOUND',
+          message: 'EDITOR_NOT_FOUND: No supported code editor detected on page.',
+        };
+      }
+
+      // 2. Structure Validation (Java)
+      if (targetLanguage === 'java' || LanguageRegistry.normalize(targetLanguage) === 'java') {
+        const platform = platformName.includes('leetcode') ? 'leetcode' : 'generic';
+        const javaCheck = this.validateJavaStructure(code, platform);
+        if (!javaCheck.valid) {
+          logger.warn(`Insertion ID: ${insertionId} | Java Validation: FAIL (${javaCheck.reason}) | Final: FAILED`);
           return {
             success: false,
             editorType: adapter.type,
-            errorCode: 'LANGUAGE_MISMATCH',
-            detectedEditorLanguage: detectedNormalized,
-            message: `Language mismatch: CodePilot (${LanguageRegistry.getInfo(targetLanguage).displayName}) vs Editor (${LanguageRegistry.getInfo(detectedNormalized).displayName})`,
+            errorCode: 'CODE_STRUCTURE_INVALID',
+            message: `CODE_STRUCTURE_INVALID: ${javaCheck.reason}`,
           };
         }
       }
-    }
 
-    // 2. Delegate to custom insertCode if adapter provides it (e.g. MonacoAdapter with Page Bridge)
-    if (typeof adapter.insertCode === 'function') {
-      const customRes = await adapter.insertCode(code, targetLanguage, options);
-      if (customRes) {
-        return customRes;
+      // 3. Idempotency Check (Already inserted)
+      const currentContent = await adapter.getValue();
+      if (this.normalizeCode(currentContent) === this.normalizeCode(code)) {
+        this.completedInsertionIds.add(insertionId);
+        logger.info(`Insertion ID: ${insertionId} | Duplicate Guard: PASS | Final: ALREADY_INSERTED`);
+        return {
+          success: true,
+          editorType: adapter.type,
+          errorCode: 'ALREADY_INSERTED',
+          message: 'ALREADY_INSERTED: Exact generated code is already present in the editor.',
+        };
       }
-    }
 
-    // 3. Fallback standard / progressive write & readback logic
-    try {
-      adapter.focus();
-    } catch {
-      // Ignore focus error
-    }
+      if (options?.insertionId) {
+        this.activeCancelledIds.delete(options.insertionId);
+      }
 
-    const isCancelled = () => {
-      if (options?.insertionId && this.activeCancelledIds.has(options.insertionId)) return true;
-      if (options?.isCancelled && options.isCancelled()) return true;
-      return false;
-    };
+      // 4. Custom Adapter Handling (e.g. MonacoAdapter)
+      if (typeof adapter.insertCode === 'function') {
+        const customRes = await adapter.insertCode(code, targetLanguage, options);
+        if (customRes) {
+          if (customRes.success) this.completedInsertionIds.add(insertionId);
+          logger.info(`Insertion ID: ${insertionId} | Write: ${customRes.success ? 'PASS' : 'FAIL'} | Final: ${customRes.success ? 'INSERTED' : 'FAILED'}`);
+          return customRes;
+        }
+      }
 
-    if (options?.mode === 'instant') {
+      // 5. Standard Atomic Write Operation
+      try {
+        adapter.focus();
+      } catch {
+        // Ignore focus error
+      }
+
+      const isCancelled = () => {
+        if (options?.insertionId && this.activeCancelledIds.has(options.insertionId)) return true;
+        if (options?.isCancelled && options.isCancelled()) return true;
+        return false;
+      };
+
+      if (isCancelled()) {
+        return {
+          success: false,
+          editorType: adapter.type,
+          errorCode: 'INSERTION_CANCELLED',
+          message: 'INSERTION_CANCELLED',
+        };
+      }
+
+      // Perform single atomic replace write
       const writeSuccess = await adapter.setValue(code);
       if (!writeSuccess) {
+        logger.warn(`Insertion ID: ${insertionId} | Write: FAIL | Final: FAILED`);
         return {
           success: false,
           editorType: adapter.type,
@@ -108,75 +198,37 @@ export class EditorManager {
           message: 'EDITOR_NOT_ACCESSIBLE: Failed to write code into detected editor.',
         };
       }
-    } else {
-      let currentLength = 0;
-      const totalLength = code.length;
 
-      while (currentLength < totalLength) {
-        if (isCancelled()) {
-          if (options?.insertionId) this.activeCancelledIds.delete(options.insertionId);
-          return {
-            success: false,
-            editorType: adapter.type,
-            errorCode: 'INSERTION_CANCELLED',
-            message: 'INSERTION_CANCELLED',
-          };
-        }
+      // 6. Readback & Verification
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const readback = await adapter.getValue();
+      const isVerified = this.verifyReadback(code, readback);
 
-        const charToInsert = code[currentLength];
-        currentLength++;
-        const currentSlice = code.slice(0, currentLength);
-        await adapter.setValue(currentSlice);
-
-        try {
-          adapter.focus();
-        } catch {
-          // Ignore focus error
-        }
-
-        try {
-          const activeEl = document.activeElement;
-          if (activeEl) {
-            const key = charToInsert === '\n' ? 'Enter' : charToInsert === '\t' ? 'Tab' : charToInsert;
-            const keyOpts = { key, bubbles: true, cancelable: true };
-            activeEl.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
-            activeEl.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: charToInsert, bubbles: true }));
-            activeEl.dispatchEvent(new InputEvent('input', { inputType: 'insertText', data: charToInsert, bubbles: true }));
-            activeEl.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
-          }
-        } catch {
-          // Ignore DOM dispatch error
-        }
-
-        const progress = Math.min(100, Math.floor((currentLength / totalLength) * 100));
-        if (options?.onProgress) {
-          options.onProgress(progress);
-        }
-
-        if (currentLength < totalLength) {
-          const delay = 12 + Math.floor(Math.random() * 16);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
+      if (isVerified) {
+        this.completedInsertionIds.add(insertionId);
+        logger.info(`Insertion ID: ${insertionId} | Write: PASS | Readback: PASS | Final: INSERTED`);
+        return {
+          success: true,
+          editorType: adapter.type,
+          message: '✓ Inserted and verified',
+        };
       }
-    }
 
-    const readback = await adapter.getValue();
-    const isVerified = this.verifyReadback(code, readback);
-
-    if (isVerified) {
+      logger.warn(`Insertion ID: ${insertionId} | Write: PASS | Readback: FAIL | Final: FAILED`);
       return {
-        success: true,
+        success: false,
         editorType: adapter.type,
-        message: '✓ Inserted and verified',
+        errorCode: 'INSERTION_VERIFICATION_FAILED',
+        message: 'INSERTION_VERIFICATION_FAILED: Editor write completed but failed readback verification.',
       };
+    } finally {
+      this.isInserting = false;
+      this.activeInsertionId = null;
+      // Allow DOM event propagation to settle before lifting MutationObserver guard
+      setTimeout(() => {
+        this.isCodePilotInserting = false;
+      }, 100);
     }
-
-    return {
-      success: false,
-      editorType: adapter.type,
-      errorCode: 'INSERTION_VERIFICATION_FAILED',
-      message: 'INSERTION_VERIFICATION_FAILED: Editor write completed but failed readback verification.',
-    };
   }
 
   public static verifyReadback(expected: string, readback: string): boolean {
@@ -184,7 +236,7 @@ export class EditorManager {
     const normExpected = this.normalizeCode(expected);
     const normReadback = this.normalizeCode(readback);
 
-    return normReadback === normExpected || normReadback.includes(normExpected) || normExpected.includes(normReadback);
+    return normReadback === normExpected || normReadback.includes(normExpected);
   }
 
   public static async getEditorValue(): Promise<string> {

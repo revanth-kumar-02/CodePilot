@@ -1,25 +1,20 @@
-import { AIProvider, OpenRouterProvider, GroqProvider, MockAIProvider, ProblemInput, ProblemSchema, AIError } from '../ai/index.js';
+import { ProblemInput, ProblemSchema, AIError, AIProviderRouter, AIProvider } from '../ai/index.js';
 import { SolutionPlan, SolutionPlanSchema } from '../reasoning/schemas.js';
 import { GeneratedCode, SupportedLanguage, SupportedLanguageSchema } from '../ai/code-schemas.js';
 import { CodeValidator } from './code-validator.js';
-import { getAIConfig } from '../ai/model-config.js';
 import { PlatformRules } from '../config/platform-rules.js';
 
 export class CodeGeneratorService {
-  private provider: AIProvider;
+  private router?: AIProviderRouter;
+  private legacyProvider?: AIProvider;
 
-  constructor(provider?: AIProvider) {
-    if (provider) {
-      this.provider = provider;
-    } else if (process.env.NODE_ENV === 'test' || process.env.USE_MOCK_AI === 'true') {
-      this.provider = new MockAIProvider();
+  constructor(providerOrRouter?: AIProvider | AIProviderRouter) {
+    if (providerOrRouter instanceof AIProviderRouter) {
+      this.router = providerOrRouter;
+    } else if (providerOrRouter) {
+      this.legacyProvider = providerOrRouter;
     } else {
-      const config = getAIConfig();
-      if (config.provider === 'groq' || config.groqApiKey) {
-        this.provider = new GroqProvider();
-      } else {
-        this.provider = new OpenRouterProvider();
-      }
+      this.router = new AIProviderRouter();
     }
   }
 
@@ -39,7 +34,7 @@ export class CodeGeneratorService {
       if (normalized.includes('ts') || normalized.includes('typescript')) return 'typescript';
     }
 
-    return 'java'; // Java is the default language
+    return 'java';
   }
 
   public async generateCode(
@@ -47,13 +42,11 @@ export class CodeGeneratorService {
     rawPlan: unknown,
     requestedLanguage?: string,
     requestedVersion?: string,
-    overrideProvider?: AIProvider
+    overrideApiKeyOrProvider?: string | AIProvider
   ): Promise<{ generatedCode: GeneratedCode; durationMs: number }> {
-    const activeProvider = overrideProvider || this.provider;
     const startTime = performance.now();
     console.log('[CodePilot][CodeGenerator] Code generation request started');
 
-    // 1. Schema Validation
     const probVal = ProblemSchema.safeParse(rawProblem);
     if (!probVal.success) {
       console.warn('[CodePilot][CodeGenerator] Problem validation failed');
@@ -77,7 +70,6 @@ export class CodeGeneratorService {
     const problem: ProblemInput = probVal.data;
     const plan: SolutionPlan = planVal.data;
 
-    // 2. Payload size limits
     const serializedSize = JSON.stringify(problem).length + JSON.stringify(plan).length;
     if (serializedSize > 60000) {
       console.warn('[CodePilot][CodeGenerator] Payload size limits exceeded');
@@ -88,7 +80,6 @@ export class CodeGeneratorService {
       );
     }
 
-    // 3. Resolve Target Language & Platform Rules
     const targetLanguage = this.resolveLanguage(problem.language, requestedLanguage);
     const platformRule = PlatformRules.getRule(
       problem.source?.hostname || problem.source?.url,
@@ -97,9 +88,7 @@ export class CodeGeneratorService {
 
     console.log(`[CodePilot][CodeGenerator] Target language: ${targetLanguage}`);
     console.log(`[CodePilot][CodeGenerator] Platform: ${platformRule.platform} (Required class: ${platformRule.className})`);
-    console.log(`[CodePilot][CodeGenerator] Provider: ${this.provider.name}`);
 
-    // 4. Bounded Generation Attempts (max 2 attempts)
     let attempt = 0;
     const maxAttempts = 2;
     let lastIssues: string[] = [];
@@ -114,37 +103,32 @@ export class CodeGeneratorService {
           retryInstruction = `Regenerate the solution using the required platform structure.
 Use exactly one public class named ${platformRule.className}.
 Ensure all braces are balanced.
-Do not add any extra closing braces.
 Return source code only.`;
         }
 
-        const result = await activeProvider.generateCode(
-          problem,
-          plan,
-          targetLanguage,
-          platformRule,
-          retryInstruction
-        );
+        let result: GeneratedCode;
+        if (typeof overrideApiKeyOrProvider === 'object' && overrideApiKeyOrProvider !== null) {
+          result = await overrideApiKeyOrProvider.generateCode(problem, plan, targetLanguage, platformRule, retryInstruction);
+        } else if (this.legacyProvider) {
+          result = await this.legacyProvider.generateCode(problem, plan, targetLanguage, platformRule, retryInstruction);
+        } else {
+          const apiKey = typeof overrideApiKeyOrProvider === 'string' ? overrideApiKeyOrProvider : undefined;
+          result = await (this.router || new AIProviderRouter()).generateCode(
+            problem,
+            plan,
+            targetLanguage,
+            platformRule,
+            retryInstruction,
+            apiKey
+          );
+        }
+
         const validation = CodeValidator.parseAndValidate(result.code, targetLanguage, platformRule);
         lastIssues = validation.issues;
-
-        if (validation.diagnostics) {
-          console.log(`[CodePilot][Diagnostics]
-Platform: ${validation.diagnostics.platform}
-Language: ${validation.diagnostics.language}
-Required class: ${validation.diagnostics.requiredClass}
-Detected class: ${validation.diagnostics.detectedClass}
-Public classes: ${validation.diagnostics.publicClassesCount}
-Brace validation: ${validation.diagnostics.braceValidation}
-Comment validation: ${validation.diagnostics.commentValidation}
-Structure: ${validation.diagnostics.structureValidation}
-Final status: ${validation.diagnostics.finalStatus}`);
-        }
 
         if (validation.hasComments) {
           console.warn(`[CodePilot][CodeGenerator] Attempt ${attempt} failed: CODE_COMMENT_VIOLATION detected.`);
           if (attempt < maxAttempts) {
-            console.log('[CodePilot][CodeGenerator] Retrying generation with explicit repair instruction...');
             continue;
           } else {
             throw new AIError('CODE_COMMENT_VIOLATION', 'Generated code contains comments after 2 attempts.', 400);
@@ -154,7 +138,6 @@ Final status: ${validation.diagnostics.finalStatus}`);
         if (!validation.valid) {
           console.warn(`[CodePilot][CodeGenerator] Attempt ${attempt} failed: CODE_STRUCTURE_INVALID detected.`);
           if (attempt < maxAttempts) {
-            console.log('[CodePilot][CodeGenerator] Retrying generation with explicit structural repair prompt...');
             continue;
           } else {
             throw new AIError(
@@ -173,32 +156,27 @@ Final status: ${validation.diagnostics.finalStatus}`);
         };
 
         const durationMs = Math.round(performance.now() - startTime);
-        console.log(`[CodePilot][CodeGenerator] Code generated successfully on attempt ${attempt} in ${durationMs}ms`);
+        console.log(`[CodePilot][CodeGenerator] Code generated successfully in ${durationMs}ms`);
 
         return {
           generatedCode: finalResult,
           durationMs,
         };
       } catch (err) {
+        if (err instanceof AIError && err.code === 'AI_RATE_LIMITED') {
+          throw err;
+        }
         if (err instanceof AIError && (err.code === 'CODE_COMMENT_VIOLATION' || err.code === 'CODE_STRUCTURE_INVALID')) {
-          if (attempt < maxAttempts) {
-            continue;
-          }
-          const durationMs = Math.round(performance.now() - startTime);
-          console.error(`[CodePilot][CodeGenerator] Generation failed after ${durationMs}ms:`, err.message);
+          if (attempt < maxAttempts) continue;
           throw err;
         }
-        if (attempt >= maxAttempts) {
-          const durationMs = Math.round(performance.now() - startTime);
-          console.error(`[CodePilot][CodeGenerator] Generation failed after ${durationMs}ms:`, err instanceof Error ? err.message : err);
-          throw err;
-        }
+        if (attempt >= maxAttempts) throw err;
       }
     }
 
     throw new AIError(
       'CODE_STRUCTURE_INVALID',
-      `CODE_STRUCTURE_INVALID: Generated code structural validation failed after 2 attempts. Issues: ${lastIssues.join('; ')}`,
+      `CODE_STRUCTURE_INVALID: Structural validation failed after 2 attempts. Issues: ${lastIssues.join('; ')}`,
       400
     );
   }

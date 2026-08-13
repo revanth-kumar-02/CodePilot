@@ -96,7 +96,17 @@ export class TabManager {
 
   public getActiveTab(): TabRuntimeState | null {
     for (const tab of this.tabs.values()) {
+      if (tab.active && !this.isRestrictedUrl(tab.url)) {
+        return tab;
+      }
+    }
+    for (const tab of this.tabs.values()) {
       if (tab.active) {
+        return tab;
+      }
+    }
+    for (const tab of this.tabs.values()) {
+      if (!this.isRestrictedUrl(tab.url)) {
         return tab;
       }
     }
@@ -109,20 +119,25 @@ export class TabManager {
     }
 
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      if (activeTab && activeTab.id !== undefined) {
-        let state = this.tabs.get(activeTab.id);
+      const activeTabs = await chrome.tabs.query({ active: true });
+      const validActiveTab = activeTabs.find((t) => t.url && !this.isRestrictedUrl(t.url)) || activeTabs[0];
+
+      if (validActiveTab && validActiveTab.id !== undefined) {
+        let state = this.tabs.get(validActiveTab.id);
         if (!state) {
-          const registered = this.registerTab(activeTab);
+          const registered = this.registerTab(validActiveTab);
           if (registered) state = registered;
         } else {
-          this.setActiveTabForWindow(activeTab.windowId, activeTab.id);
-          if (activeTab.url && activeTab.url !== state.url) {
-            const updated = this.updateTab(activeTab.id, { url: activeTab.url, title: activeTab.title || state.title });
+          this.setActiveTabForWindow(validActiveTab.windowId, validActiveTab.id);
+          if (validActiveTab.url && validActiveTab.url !== state.url) {
+            const updated = this.updateTab(validActiveTab.id, {
+              url: validActiveTab.url,
+              title: validActiveTab.title || state.title,
+            });
             if (updated) state = updated;
           }
         }
-        return state || this.getActiveTab() || null;
+        return state || this.getActiveTab();
       }
     } catch (error) {
       logger.warn('Failed to sync active tab with Chrome API:', error);

@@ -11,7 +11,7 @@ export const ProblemViewerModal: React.FC<ProblemViewerModalProps> = ({ problem,
     <div className="modal-overlay">
       <div className="modal-content">
         <div className="modal-header">
-          <span style={{ fontWeight: 600, fontSize: '13px' }}>Normalized Problem Object</span>
+          <span style={{ fontWeight: 600, fontSize: '13px' }}>View Extracted Problem (Normalized Content for AI)</span>
           <button className="close-btn" onClick={onClose}>
             ✕
           </button>

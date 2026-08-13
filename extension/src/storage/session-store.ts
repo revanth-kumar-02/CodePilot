@@ -16,6 +16,26 @@ export interface ProblemSessionEditor {
   inserted: boolean;
 }
 
+export type ExecutionStatus =
+  | 'COMPILE_ERROR'
+  | 'RUNTIME_ERROR'
+  | 'WRONG_ANSWER'
+  | 'TIME_LIMIT_EXCEEDED'
+  | 'MEMORY_LIMIT_EXCEEDED'
+  | 'UNKNOWN_ERROR'
+  | 'ACCEPTED'
+  | 'PASS'
+  | null;
+
+export interface ProblemSessionDiagnosticsContext {
+  lastExecutionStatus: ExecutionStatus;
+  lastError: string | null;
+  lastTestOutput: string | null;
+  errorClassification: string | null;
+  repairAttempt: number;
+  repairCode: string | null;
+}
+
 export interface ProblemSession {
   schemaVersion: 1;
   sessionId: string;
@@ -28,6 +48,7 @@ export interface ProblemSession {
   solutionPlan: SolutionPlanData | null;
   code: ProblemSessionCode;
   editor: ProblemSessionEditor;
+  diagnosticsContext?: ProblemSessionDiagnosticsContext;
   status: 'active' | 'completed' | 'failed';
   createdAt: number;
   updatedAt: number;
@@ -104,6 +125,14 @@ export class SessionStore {
         detected: false,
         adapter: null,
         inserted: false,
+      },
+      diagnosticsContext: {
+        lastExecutionStatus: null,
+        lastError: null,
+        lastTestOutput: null,
+        errorClassification: null,
+        repairAttempt: 0,
+        repairCode: null,
       },
       status: 'active',
       createdAt: now,

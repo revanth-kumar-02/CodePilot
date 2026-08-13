@@ -16,6 +16,7 @@ import { Logger } from '../shared/utils/logger';
 import { LanguageRegistry } from '../shared/language-registry';
 import { SessionStore, ProblemSession } from '../storage/session-store';
 import { SettingsStorage } from '../storage/settings-storage';
+import { ProblemExtractionResult } from '../extraction/types';
 
 const logger = new Logger('MessageRouter');
 
@@ -240,7 +241,7 @@ export class MessageRouter {
         }
 
         case 'REQUEST_PAGE_DETECTION': {
-          const activeTab = this.runtime.tabManager.getActiveTab();
+          const activeTab = await this.runtime.tabManager.syncActiveTab();
           if (!activeTab) {
             sendResponse({
               code: 'TAB_NOT_FOUND',
@@ -311,7 +312,7 @@ export class MessageRouter {
         }
 
         case 'REQUEST_PROBLEM_EXTRACTION': {
-          const activeTab = this.runtime.tabManager.getActiveTab();
+          const activeTab = await this.runtime.tabManager.syncActiveTab();
           if (!activeTab) {
             sendResponse({
               code: 'TAB_NOT_FOUND',
@@ -323,60 +324,116 @@ export class MessageRouter {
           const targetTabId = activeTab.tabId;
           const currentSession = await SessionStore.getSession(targetTabId);
 
-          chrome.tabs.sendMessage(targetTabId, { type: 'REQUEST_PROBLEM_EXTRACTION' }, async (response) => {
-            const err3 = chrome.runtime.lastError;
-            if (err3 || !response || !response.result || !response.result.problem) {
+          const sendExtractionRequest = (isRetry = false) => {
+            chrome.tabs.sendMessage(targetTabId, { type: 'REQUEST_PROBLEM_EXTRACTION' }, async (response) => {
+              const err3 = chrome.runtime.lastError;
+              if ((err3 || !response || !response.result || !response.result.problem) && !isRetry) {
+                if (typeof chrome !== 'undefined' && chrome.scripting) {
+                  try {
+                    await chrome.scripting.executeScript({
+                      target: { tabId: targetTabId },
+                      files: ['content-script.js'],
+                    });
+                    setTimeout(() => sendExtractionRequest(true), 200);
+                    return;
+                  } catch {
+                    // Script injection failed (e.g. restricted page)
+                  }
+                }
+              }
+
+              if (err3 || !response || !response.result || !response.result.problem) {
+                sendResponse({
+                  type: 'PROBLEM_EXTRACTION_RESULT',
+                  result: {
+                    status: 'failed',
+                    confidence: 0,
+                    durationMs: 0,
+                    warnings: [],
+                    errors: ['DATA_NOT_AVAILABLE: Unable to extract problem statement from active page.'],
+                    fields: [],
+                    problem: null,
+                  },
+                } satisfies ProblemExtractionResponseMessage);
+                return;
+              }
+
+              const extractedProblem = response.result.problem;
+              const title = extractedProblem?.title || activeTab.title || 'Coding Problem';
+              const newFingerprint = SessionStore.createFingerprint(activeTab.url, title);
+
+              if (!currentSession || currentSession.problemFingerprint !== newFingerprint) {
+                await SessionStore.createSession(
+                  targetTabId,
+                  activeTab.url,
+                  extractedProblem?.source?.hostname || 'unknown',
+                  title
+                );
+              }
+
+              await SessionStore.updateSession(targetTabId, {
+                problem: extractedProblem,
+                platform: extractedProblem?.source?.hostname || 'unknown',
+                url: activeTab.url,
+              });
+
+              await this.syncSessionToTabState(targetTabId);
+
               sendResponse({
                 type: 'PROBLEM_EXTRACTION_RESULT',
                 result: {
-                  status: 'failed',
-                  confidence: 0,
-                  durationMs: 0,
-                  warnings: [],
-                  errors: ['DATA_NOT_AVAILABLE: Unable to extract problem statement from active page.'],
-                  fields: [],
-                  problem: null,
+                  status: extractedProblem ? 'success' : 'partial',
+                  confidence: response.result.confidence || 0.9,
+                  durationMs: response.result.durationMs || 0,
+                  warnings: response.result.warnings || [],
+                  errors: response.result.errors || [],
+                  fields: response.result.fields || [],
+                  problem: extractedProblem,
                 },
               } satisfies ProblemExtractionResponseMessage);
-              return;
-            }
+            });
+          };
 
-            const extractedProblem = response.result.problem;
-            const title = extractedProblem?.title || activeTab.title || 'Coding Problem';
-            const newFingerprint = SessionStore.createFingerprint(activeTab.url, title);
+          sendExtractionRequest();
+          return true;
+        }
 
-            if (!currentSession || currentSession.problemFingerprint !== newFingerprint) {
-              await SessionStore.createSession(
-                targetTabId,
-                activeTab.url,
-                extractedProblem?.source?.hostname || 'unknown',
-                title
-              );
-            }
-
-            await SessionStore.updateSession(targetTabId, {
-              problem: extractedProblem,
-              platform: extractedProblem?.source?.hostname || 'unknown',
-              url: activeTab.url,
+        case 'PROBLEM_EXTRACTION_RESULT': {
+          const rawMsg = msg as any;
+          const tabId = sender.tab?.id || rawMsg.tabId;
+          const result = (rawMsg.result || rawMsg.payload) as ProblemExtractionResult;
+          if (tabId && result) {
+            this.runtime.tabManager.updateTab(tabId, {
+              problemExtraction: {
+                status: result.status,
+                result,
+                lastUpdated: Date.now(),
+              },
             });
 
-            await this.syncSessionToTabState(targetTabId);
+            if (result.problem && (result.status === 'success' || result.status === 'partial')) {
+              const url = sender.tab?.url || '';
+              const title = result.problem.title || sender.tab?.title || 'Coding Problem';
+              const platform = result.problem.source?.platform || result.problem.source?.hostname || 'unknown';
+              
+              let session = await SessionStore.getSession(tabId);
+              const newFingerprint = SessionStore.createFingerprint(url, title);
 
-            sendResponse({
-              type: 'PROBLEM_EXTRACTION_RESULT',
-              result: {
-                status: extractedProblem ? 'success' : 'partial',
-                confidence: 0.9,
-                durationMs: 0,
-                warnings: [],
-                errors: [],
-                fields: [],
-                problem: extractedProblem,
-              },
-            } satisfies ProblemExtractionResponseMessage);
-          });
+              if (!session || session.problemFingerprint !== newFingerprint) {
+                session = await SessionStore.createSession(tabId, url, platform, title);
+              }
 
-          return true;
+              await SessionStore.updateSession(tabId, {
+                problem: result.problem,
+                platform,
+                url,
+              });
+
+              await this.syncSessionToTabState(tabId);
+            }
+          }
+          sendResponse({ status: 'OK' });
+          break;
         }
 
         case 'REQUEST_AI_ANALYSIS': {
@@ -391,6 +448,17 @@ export class MessageRouter {
 
           const tabId = activeTab.tabId;
           let session = await SessionStore.getSession(tabId);
+
+          const forceRefresh = Boolean(msg.forceRefresh || msg.payload?.forceRefresh);
+          if (!forceRefresh && session?.aiAnalysis) {
+            logger.info('Returning cached AI Analysis from ProblemSession');
+            sendResponse({
+              type: 'AI_ANALYSIS_RESULT',
+              analysis: session.aiAnalysis,
+            });
+            return true;
+          }
+
           const existingProblem = session?.problem || activeTab.problemExtraction?.result?.problem;
 
           const performAnalysis = async (problemPayload: any) => {
@@ -400,12 +468,14 @@ export class MessageRouter {
 
             const settings = await SettingsStorage.getSettings();
             const baseUrl = settings.serverUrl || 'http://localhost:3000';
+            const analysisKey = settings.groqAnalysisKey || settings.apiKey;
 
             fetch(`${baseUrl}/api/ai/analyze`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 'X-AI-Provider': settings.aiProvider,
+                'X-AI-Analysis-Key': analysisKey,
                 'X-AI-Api-Key': settings.apiKey,
               },
               body: JSON.stringify({ problem: problemPayload }),
@@ -479,6 +549,17 @@ export class MessageRouter {
 
           const tabId = activeTab.tabId;
           let session = await SessionStore.getSession(tabId);
+
+          const forceRefresh = Boolean(msg.forceRefresh || msg.payload?.forceRefresh);
+          if (!forceRefresh && session?.solutionPlan) {
+            logger.info('Returning cached Solution Plan from ProblemSession');
+            sendResponse({
+              type: 'REASONING_RESULT',
+              plan: session.solutionPlan,
+            });
+            return true;
+          }
+
           const extractedProblem = session?.problem || activeTab.problemExtraction?.result?.problem;
 
           if (!extractedProblem) {
@@ -491,12 +572,14 @@ export class MessageRouter {
 
           const settings = await SettingsStorage.getSettings();
           const baseUrl = settings.serverUrl || 'http://localhost:3000';
+          const analysisKey = settings.groqAnalysisKey || settings.apiKey;
 
           fetch(`${baseUrl}/api/ai/reason`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'X-AI-Provider': settings.aiProvider,
+              'X-AI-Analysis-Key': analysisKey,
               'X-AI-Api-Key': settings.apiKey,
             },
             body: JSON.stringify({ problem: extractedProblem }),
@@ -557,6 +640,27 @@ export class MessageRouter {
           const tabId = activeTab.tabId;
           let session = await SessionStore.getSession(tabId);
 
+          const rawLang = msg.targetLanguage || msg.payload?.targetLanguage;
+          const targetLang = LanguageRegistry.normalize(rawLang);
+          const forceRefresh = Boolean(msg.forceRefresh || msg.payload?.forceRefresh);
+
+          if (!forceRefresh && session?.code && session.code.source && session.code.language === targetLang) {
+            logger.info('Returning cached Generated Code from ProblemSession');
+            sendResponse({
+              type: 'CODE_GENERATION_RESULT',
+              generatedCode: {
+                code: session.code.source,
+                language: session.code.language,
+                explanation: session.code.explanation || [],
+                completeness: true,
+                model: 'cached',
+                provider: 'session',
+                generatedAt: session.updatedAt,
+              },
+            });
+            return true;
+          }
+
           const extractedProblem = session?.problem || activeTab.problemExtraction?.result?.problem;
           if (!extractedProblem) {
             sendResponse({
@@ -575,9 +679,6 @@ export class MessageRouter {
             return false;
           }
 
-          const rawLang = msg.targetLanguage || msg.payload?.targetLanguage;
-          const targetLang = LanguageRegistry.normalize(rawLang);
-
           if (!session) {
             session = await SessionStore.createSession(tabId, activeTab.url, 'unknown', extractedProblem.title);
           }
@@ -595,12 +696,14 @@ export class MessageRouter {
 
           const codeGenSettings = await SettingsStorage.getSettings();
           const codeGenBaseUrl = codeGenSettings.serverUrl || 'http://localhost:3000';
+          const codeKey = codeGenSettings.groqCodeKey || codeGenSettings.apiKey;
 
           fetch(`${codeGenBaseUrl}/api/ai/generate-code`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'X-AI-Provider': codeGenSettings.aiProvider,
+              'X-AI-Code-Key': codeKey,
               'X-AI-Api-Key': codeGenSettings.apiKey,
             },
             body: JSON.stringify({
@@ -758,6 +861,213 @@ export class MessageRouter {
             return true;
           }
           break;
+        }
+
+        case 'REPORT_EXECUTION_RESULT': {
+          const activeTab = this.runtime.tabManager.getActiveTab();
+          if (activeTab?.tabId) {
+            const tabId = activeTab.tabId;
+            const payload = msg.payload as any;
+            const session = await SessionStore.getSession(tabId);
+            if (session) {
+              await SessionStore.updateSession(tabId, {
+                diagnosticsContext: {
+                  lastExecutionStatus: payload?.status || null,
+                  lastError: payload?.errorMessage || null,
+                  lastTestOutput: payload?.testOutput || null,
+                  errorClassification: payload?.status === 'ACCEPTED' ? null : session.diagnosticsContext?.errorClassification || null,
+                  repairAttempt: session.diagnosticsContext?.repairAttempt || 0,
+                  repairCode: session.diagnosticsContext?.repairCode || null,
+                },
+              });
+              await this.syncSessionToTabState(tabId);
+            }
+          }
+          sendResponse({ status: 'OK' });
+          break;
+        }
+
+        case 'REQUEST_ERROR_ANALYSIS': {
+          const activeTab = this.runtime.tabManager.getActiveTab();
+          if (!activeTab?.tabId) {
+            sendResponse({ status: 'failed', error: 'Active tab missing' });
+            return false;
+          }
+
+          const tabId = activeTab.tabId;
+          const session = await SessionStore.getSession(tabId);
+          const problem = session?.problem || activeTab.problemExtraction?.result?.problem;
+          const currentCode = session?.code?.source || '';
+          const errorMessage = session?.diagnosticsContext?.lastError || msg.payload?.errorMessage || 'Execution Error';
+          const testOutput = session?.diagnosticsContext?.lastTestOutput || msg.payload?.testOutput || null;
+
+          if (!problem) {
+            sendResponse({ status: 'failed', error: 'No problem context available for analysis' });
+            return false;
+          }
+
+          const settings = await SettingsStorage.getSettings();
+          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+
+          fetch(`${baseUrl}/api/ai/analyze-error`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-AI-Provider': settings.aiProvider,
+              'X-AI-Api-Key': settings.apiKey,
+            },
+            body: JSON.stringify({
+              problem,
+              currentCode,
+              errorMessage,
+              testOutput,
+            }),
+          })
+            .then(async (res) => {
+              const data = await res.json();
+              if (res.ok && data.status === 'success' && data.analysis) {
+                if (session) {
+                  await SessionStore.updateSession(tabId, {
+                    diagnosticsContext: {
+                      ...session.diagnosticsContext!,
+                      errorClassification: data.analysis.classification,
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
+                sendResponse({ status: 'success', analysis: data.analysis });
+              } else {
+                sendResponse({ status: 'failed', error: data.error?.message || 'Error analysis failed' });
+              }
+            })
+            .catch((err) => {
+              sendResponse({ status: 'failed', error: err instanceof Error ? err.message : String(err) });
+            });
+
+          return true;
+        }
+
+        case 'REQUEST_CODE_REPAIR': {
+          const activeTab = this.runtime.tabManager.getActiveTab();
+          if (!activeTab?.tabId) {
+            sendResponse({ status: 'failed', error: 'Active tab missing' });
+            return false;
+          }
+
+          const tabId = activeTab.tabId;
+          const session = await SessionStore.getSession(tabId);
+          const currentAttempt = session?.diagnosticsContext?.repairAttempt || 0;
+
+          if (currentAttempt >= 3) {
+            sendResponse({ status: 'failed', error: 'Repair limit reached.' });
+            return false;
+          }
+
+          const problem = session?.problem || activeTab.problemExtraction?.result?.problem;
+          const plan = session?.solutionPlan || activeTab.reasoning?.plan || null;
+          const currentCode = session?.code?.source || '';
+          const language = session?.code?.language || 'java';
+          const errorMessage = session?.diagnosticsContext?.lastError || 'Execution Error';
+          const testOutput = session?.diagnosticsContext?.lastTestOutput || null;
+          const classification = session?.diagnosticsContext?.errorClassification || 'Compilation Error';
+
+          if (!problem) {
+            sendResponse({ status: 'failed', error: 'No problem context available for repair' });
+            return false;
+          }
+
+          const settings = await SettingsStorage.getSettings();
+          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+
+          fetch(`${baseUrl}/api/ai/repair-code`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-AI-Provider': settings.aiProvider,
+              'X-AI-Api-Key': settings.apiKey,
+            },
+            body: JSON.stringify({
+              problem,
+              plan,
+              currentCode,
+              language,
+              errorMessage,
+              testOutput,
+              classification,
+            }),
+          })
+            .then(async (res) => {
+              const data = await res.json();
+              if (res.ok && data.status === 'success' && data.repairedCode) {
+                if (session) {
+                  await SessionStore.updateSession(tabId, {
+                    diagnosticsContext: {
+                      ...session.diagnosticsContext!,
+                      repairCode: data.repairedCode,
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
+                sendResponse({ status: 'success', repairedCode: data.repairedCode });
+              } else {
+                sendResponse({ status: 'failed', error: data.error?.message || 'Code repair generation failed' });
+              }
+            })
+            .catch((err) => {
+              sendResponse({ status: 'failed', error: err instanceof Error ? err.message : String(err) });
+            });
+
+          return true;
+        }
+
+        case 'APPLY_REPAIR': {
+          const activeTab = this.runtime.tabManager.getActiveTab();
+          if (!activeTab?.tabId) {
+            sendResponse({ success: false, message: 'Active tab missing' });
+            return false;
+          }
+
+          const tabId = activeTab.tabId;
+          const session = await SessionStore.getSession(tabId);
+          const repairedCode = msg.payload?.code || session?.diagnosticsContext?.repairCode;
+
+          if (!repairedCode) {
+            sendResponse({ success: false, message: 'No repair code available to apply' });
+            return false;
+          }
+
+          chrome.tabs.sendMessage(
+            tabId,
+            { type: 'INSERT_CODE_TO_EDITOR', code: repairedCode, mode: 'instant' },
+            async (response) => {
+              if (chrome.runtime.lastError || !response || !response.success) {
+                sendResponse({
+                  success: false,
+                  message: response?.message || 'Editor code insertion failed.',
+                });
+              } else {
+                if (session) {
+                  const newAttempt = (session.diagnosticsContext?.repairAttempt || 0) + 1;
+                  await SessionStore.updateSession(tabId, {
+                    code: {
+                      ...session.code,
+                      source: repairedCode,
+                      status: 'ready',
+                    },
+                    diagnosticsContext: {
+                      ...session.diagnosticsContext!,
+                      repairAttempt: newAttempt,
+                      repairCode: null,
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
+                sendResponse({ success: true, message: '✓ Repair applied' });
+              }
+            }
+          );
+
+          return true;
         }
 
         default:

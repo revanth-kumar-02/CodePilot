@@ -14,14 +14,17 @@ import { PlatformRule, PlatformRules } from '../config/platform-rules.js';
 export class OpenRouterProvider implements AIProvider {
   public readonly name = 'openrouter';
   private customApiKey?: string;
+  private customModel?: string;
 
-  constructor(customApiKey?: string) {
+  constructor(customApiKey?: string, customModel?: string) {
     this.customApiKey = customApiKey;
+    this.customModel = customModel;
   }
 
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const config = getAIConfig();
     const apiKey = this.customApiKey || config.openRouterApiKey;
+    const model = this.customModel || config.model;
 
     if (!apiKey) {
       throw new AIError(
@@ -35,7 +38,7 @@ export class OpenRouterProvider implements AIProvider {
     const userPrompt = PromptBuilder.buildUserPrompt(problem);
 
     const payload = {
-      model: config.model,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -106,7 +109,7 @@ export class OpenRouterProvider implements AIProvider {
           throw new AIError('AI_INVALID_RESPONSE', 'Empty response content received from OpenRouter.', 502);
         }
 
-        return ResponseParser.parse(rawContent, this.name, config.model);
+        return ResponseParser.parse(rawContent, this.name, model);
       } catch (err: unknown) {
         clearTimeout(timeoutId);
 
@@ -129,6 +132,7 @@ export class OpenRouterProvider implements AIProvider {
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
     const config = getAIConfig();
     const apiKey = this.customApiKey || config.openRouterApiKey;
+    const model = this.customModel || config.model;
 
     if (!apiKey) {
       throw new AIError(
@@ -143,7 +147,7 @@ export class OpenRouterProvider implements AIProvider {
     const userPrompt = ReasoningPromptBuilder.buildUserPrompt(problem);
 
     const payload = {
-      model: config.model,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -199,7 +203,7 @@ export class OpenRouterProvider implements AIProvider {
         throw new AIError('AI_EMPTY_RESPONSE', 'No usable content received from OpenRouter.', 502, true);
       }
 
-      const { plan } = ReasoningValidator.parseAndValidate(rawContent, problem, this.name, config.model);
+      const { plan } = ReasoningValidator.parseAndValidate(rawContent, problem, this.name, model);
       return plan;
     } catch (err: unknown) {
       clearTimeout(timeoutId);
@@ -224,6 +228,7 @@ export class OpenRouterProvider implements AIProvider {
     const startTime = Date.now();
     const config = getAIConfig();
     const apiKey = this.customApiKey || config.openRouterApiKey;
+    const model = this.customModel || config.model;
     const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 
     if (!apiKey) {
@@ -241,7 +246,7 @@ export class OpenRouterProvider implements AIProvider {
     }
 
     const payload = {
-      model: config.model,
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -322,7 +327,7 @@ export class OpenRouterProvider implements AIProvider {
             `Time complexity ${plan.complexity.time}, Space complexity ${plan.complexity.space}.`,
           ],
           completeness: validation.completeness,
-          model: config.model,
+          model,
           provider: this.name,
           generatedAt: Date.now(),
           durationMs: Date.now() - startTime,

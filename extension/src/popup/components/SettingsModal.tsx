@@ -44,7 +44,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         className="modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '340px',
+          width: '360px',
           background: '#0f172a',
           color: '#f8fafc',
           border: '1px solid #334155',
@@ -57,7 +57,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         <div
           style={{
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             padding: '12px 16px',
             borderBottom: '1px solid #1e293b',
@@ -67,7 +67,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '16px' }}>⚙️</span>
             <span style={{ fontWeight: 700, fontSize: '13px', color: '#f8fafc' }}>
-              AI Provider & Key Settings
+              AI Provider & Key Routing Settings
             </span>
           </div>
           <button
@@ -106,7 +106,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 outline: 'none',
               }}
             >
-              <option value="groq">Groq (Ultra-Fast, Llama-3)</option>
+              <option value="groq">Groq (Ultra-Fast, Dedicated Keys)</option>
               <option value="openrouter">OpenRouter (100+ AI Models)</option>
               <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
               <option value="gemini">Google Gemini (Gemini 1.5 Flash)</option>
@@ -115,56 +115,103 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </select>
           </div>
 
-          {/* API Key Input */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
-                Your Custom API Key
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
+          {/* Dedicated Keys for Groq */}
+          {settings.aiProvider === 'groq' ? (
+            <>
+              {/* Analysis Workflow Key */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
+                    Groq Analysis API Key (GROQ_ANALYSIS_KEY)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    style={{ background: 'none', border: 'none', color: '#60a5fa', fontSize: '10px', cursor: 'pointer', padding: 0 }}
+                  >
+                    {showApiKey ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder="gsk_analysis_..."
+                  value={settings.groqAnalysisKey || ''}
+                  onChange={(e) => setSettings({ ...settings, groqAnalysisKey: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    background: '#1e293b',
+                    color: '#f8fafc',
+                    border: '1px solid #475569',
+                    fontSize: '12px',
+                    outline: 'none',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+
+              {/* Code Workflow Key */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
+                  Groq Code API Key (GROQ_CODE_KEY)
+                </label>
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder="gsk_code_..."
+                  value={settings.groqCodeKey || ''}
+                  onChange={(e) => setSettings({ ...settings, groqCodeKey: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    background: '#1e293b',
+                    color: '#f8fafc',
+                    border: '1px solid #475569',
+                    fontSize: '12px',
+                    outline: 'none',
+                    fontFamily: 'monospace',
+                  }}
+                />
+                <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                  Dedicated keys prevent rate-limit contention between AI Analysis and Code Generation.
+                </span>
+              </div>
+            </>
+          ) : (
+            /* Single API Key Input */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
+                  Custom API Key
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  style={{ background: 'none', border: 'none', color: '#60a5fa', fontSize: '10px', cursor: 'pointer', padding: 0 }}
+                >
+                  {showApiKey ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                placeholder="sk-..."
+                value={settings.apiKey}
+                onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#60a5fa',
-                  fontSize: '10px',
-                  cursor: 'pointer',
-                  padding: 0,
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  background: '#1e293b',
+                  color: '#f8fafc',
+                  border: '1px solid #475569',
+                  fontSize: '12px',
+                  outline: 'none',
+                  fontFamily: 'monospace',
                 }}
-              >
-                {showApiKey ? 'Hide' : 'Show'}
-              </button>
+              />
             </div>
-            <input
-              type={showApiKey ? 'text' : 'password'}
-              placeholder={
-                settings.aiProvider === 'groq'
-                  ? 'gsk_...'
-                  : settings.aiProvider === 'openai'
-                  ? 'sk-proj-...'
-                  : settings.aiProvider === 'gemini'
-                  ? 'AIzaSy...'
-                  : 'sk-ant-...'
-              }
-              value={settings.apiKey}
-              onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                background: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #475569',
-                fontSize: '12px',
-                outline: 'none',
-                fontFamily: 'monospace',
-              }}
-            />
-            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-              Stored locally in your browser. Leave empty to use backend default.
-            </span>
-          </div>
+          )}
 
           {/* Backend Server URL */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

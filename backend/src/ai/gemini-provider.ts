@@ -15,9 +15,9 @@ export class GeminiProvider implements AIProvider {
   private apiKey?: string;
   private model: string;
 
-  constructor(apiKey?: string, model: string = 'gemini-1.5-flash') {
+  constructor(apiKey?: string, model: string = 'gemini-2.0-flash') {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY;
-    this.model = model;
+    this.model = model || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
   }
 
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
@@ -82,64 +82,88 @@ export class GeminiProvider implements AIProvider {
   }
 
   private async executeGenerateContent(systemPrompt: string, userPrompt: string, jsonResponse: boolean = false): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const candidateModels = Array.from(
+      new Set([
+        this.model,
+        process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-2.5-flash',
+        'gemini-1.5-pro',
+      ])
+    );
 
-    const payload: any = {
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userPrompt }],
+    let lastError: Error | null = null;
+
+    for (const modelId of candidateModels) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${this.apiKey}`;
+
+      const payload: any = {
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
         },
-      ],
-      generationConfig: {
-        temperature: 0.1,
-      },
-    };
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: userPrompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+        },
+      };
 
-    if (jsonResponse) {
-      payload.generationConfig.responseMimeType = 'application/json';
+      if (jsonResponse) {
+        payload.generationConfig.responseMimeType = 'application/json';
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errText = await response.text();
+          if (response.status === 401 || response.status === 403) {
+            throw new AIError('AI_AUTHENTICATION_ERROR', 'Invalid Google Gemini API Key.', 401);
+          }
+          if (response.status === 429) {
+            throw new AIError('AI_RATE_LIMITED', 'Google Gemini Rate limit exceeded.', 429);
+          }
+          if (response.status === 404) {
+            console.warn(`[CodePilot][GeminiProvider] Model ${modelId} returned 404, trying next candidate model...`);
+            lastError = new AIError('AI_UPSTREAM_ERROR', `Gemini API error (404): ${errText}`, 404);
+            continue;
+          }
+          throw new AIError('AI_UPSTREAM_ERROR', `Gemini API error (${response.status}): ${errText}`, response.status);
+        }
+
+        const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          throw new AIError('AI_EMPTY_RESPONSE', 'Empty response received from Google Gemini API.', 502);
+        }
+        return text;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (err instanceof AIError && (err.statusCode === 401 || err.statusCode === 429)) {
+          throw err;
+        }
+        if ((err as Error)?.name === 'AbortError') {
+          throw new AIError('AI_TIMEOUT', 'Google Gemini request timed out.', 504);
+        }
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 401 || response.status === 403) {
-          throw new AIError('AI_AUTHENTICATION_ERROR', 'Invalid Google Gemini API Key.', 401);
-        }
-        if (response.status === 429) {
-          throw new AIError('AI_RATE_LIMITED', 'Google Gemini Rate limit exceeded.', 429);
-        }
-        throw new AIError('AI_UPSTREAM_ERROR', `Gemini API error (${response.status}): ${errText}`, response.status);
-      }
-
-      const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        throw new AIError('AI_EMPTY_RESPONSE', 'Empty response received from Google Gemini API.', 502);
-      }
-      return text;
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof AIError) throw err;
-      if ((err as Error)?.name === 'AbortError') {
-        throw new AIError('AI_TIMEOUT', 'Google Gemini request timed out.', 504);
-      }
-      throw new AIError('AI_UPSTREAM_ERROR', err instanceof Error ? err.message : 'Unknown Gemini connection error', 500);
-    }
+    throw lastError || new AIError('AI_UPSTREAM_ERROR', 'All Gemini model candidate endpoints failed.', 500);
   }
 }

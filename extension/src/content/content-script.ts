@@ -85,11 +85,32 @@ function runExtractionAndReport(detection?: PageDetectionResult): ProblemExtract
   }
 }
 
+let currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+function checkUrlChange(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.href !== currentUrl) {
+    currentUrl = window.location.href;
+    retryCount = 0;
+    logger.info(`URL changed to ${currentUrl}. Clearing previous extraction and re-running.`);
+    safeSendMessage({ type: 'CLEAR_PROBLEM_EXTRACTION' });
+    setTimeout(() => {
+      if (!isContextValid()) return;
+      const detResult = runDetectionAndReport(true);
+      if (detResult && (detResult.type === 'coding-problem' || detResult.type === 'coding')) {
+        runExtractionAndReport(detResult);
+      }
+    }, 500);
+  }
+}
+
 function initMutationObserver(): void {
   if (typeof MutationObserver === 'undefined' || !document.body) return;
 
   const observer = new MutationObserver(() => {
-    if (!isContextValid()) return;
+    if (!isContextValid() || EditorManager.isCodePilotWriting()) return;
+
+    checkUrlChange();
 
     if (debounceTimer) {
       clearTimeout(debounceTimer);
@@ -108,6 +129,17 @@ function initMutationObserver(): void {
             retryCount = MAX_BOUNDED_RETRIES;
           }
         }
+
+        // Automatic Execution Result Scan
+        import('../extraction/execution-extractor').then(({ ExecutionExtractor }) => {
+          const res = ExecutionExtractor.extract(document);
+          if (res.detected && res.status) {
+            safeSendMessage({
+              type: 'REPORT_EXECUTION_RESULT',
+              payload: res,
+            });
+          }
+        });
       }
     }, 800);
   });
@@ -116,6 +148,9 @@ function initMutationObserver(): void {
     childList: true,
     subtree: true,
   });
+
+  window.addEventListener('popstate', checkUrlChange);
+  window.addEventListener('hashchange', checkUrlChange);
 }
 
 function initializeContentScript(): void {
@@ -162,6 +197,20 @@ function initializeContentScript(): void {
       if (message.type === 'REQUEST_PROBLEM_EXTRACTION') {
         const result = runExtractionAndReport();
         sendResponse({ type: 'PROBLEM_EXTRACTION_RESULT', result });
+        return true;
+      }
+
+      if (message.type === 'SCAN_EXECUTION_RESULT') {
+        import('../extraction/execution-extractor').then(({ ExecutionExtractor }) => {
+          const res = ExecutionExtractor.extract(document);
+          if (res.detected) {
+            safeSendMessage({
+              type: 'REPORT_EXECUTION_RESULT',
+              payload: res,
+            });
+          }
+          sendResponse({ success: true, result: res });
+        });
         return true;
       }
 
