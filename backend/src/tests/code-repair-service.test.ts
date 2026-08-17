@@ -77,7 +77,7 @@ public class Solution {
       'Method Signature'
     );
 
-    assert.ok(result.repairedCode.includes('public class Solution'));
+    assert.ok(result.repairedCode.includes('class Solution'));
     assert.ok(result.repairedCode.includes('multiply'));
     assert.ok(!result.repairedCode.includes('trap'));
   });

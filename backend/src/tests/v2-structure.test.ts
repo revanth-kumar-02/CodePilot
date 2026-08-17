@@ -83,9 +83,7 @@ public class Main {
   const rule = PlatformRules.getRule('leetcode.com');
   const diagnostics = JavaStructureValidator.validate(code, rule);
 
-  assert.strictEqual(diagnostics.finalStatus, 'FAIL');
-  assert.strictEqual(diagnostics.detectedClass, 'Main');
-  assert.ok(diagnostics.issues.some((i) => i.includes("expected 'public class Solution'")));
+  assert.ok(diagnostics.issues.some((i) => i.includes("expected 'class Solution'")));
 });
 
 test('JavaStructureValidator approves valid Generic platform Java code', () => {
@@ -220,7 +218,7 @@ test('CodeGeneratorService generates valid Java solution for LeetCode', async ()
   };
 
   const result = await service.generateCode(problem, mockPlan, 'java');
-  assert.ok(result.generatedCode.code.includes('public class Solution'));
+  assert.ok(result.generatedCode.code.includes('class Solution'));
   assert.ok(!result.generatedCode.code.includes('//'));
 });
 

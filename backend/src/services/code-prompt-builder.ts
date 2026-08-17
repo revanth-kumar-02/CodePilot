@@ -12,11 +12,11 @@ export class CodePromptBuilder {
         platformInstructions = `
 PLATFORM-SPECIFIC JAVA CONSTRAINTS (LEETCODE):
 - The generated Java solution MUST start with:
-  public class Solution {
+  class Solution {
       ...
   }
-- For LeetCode, the primary solution class MUST be named exactly 'Solution'.
-- NEVER generate: 'class Main', 'public class Main', 'class Solution' (must be 'public class Solution'), 'public class Test', or any custom class name.
+- For LeetCode, the primary solution class MUST be named 'Solution' (using 'class Solution'). Do NOT use 'public class Solution'.
+- NEVER generate: 'class Main', 'public class Main', 'public class Test', or any custom class name.
 - Do NOT automatically add 'public static void main(String[] args)' unless the extracted problem requirements explicitly require it.
 - Preserve the exact method signature/interface expected by the problem statement.`;
       } else {

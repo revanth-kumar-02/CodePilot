@@ -289,29 +289,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </div>
           )}
 
-          {/* Backend Server URL */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
-              CodePilot Server Endpoint
-            </label>
-            <input
-              type="text"
-              placeholder="https://codepilot-6hi8.onrender.com"
-              value={settings.serverUrl}
-              onChange={(e) => setSettings({ ...settings, serverUrl: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                background: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #475569',
-                fontSize: '12px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
           {/* Status Alert */}
           {statusMessage && (
             <div

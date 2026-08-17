@@ -48,30 +48,35 @@ export class JavaStructureValidator {
       issues.push(`Brace nesting invalid: unbalanced braces (depth at end: ${depth}).`);
     }
 
-    // 3. Public Class Detection & Name Validation
-    const publicClassRegex = /\bpublic\s+class\s+([A-Za-z0-9_$]+)/g;
-    const publicMatches = Array.from(codeWithoutStrings.matchAll(publicClassRegex));
-    const publicClassesCount = publicMatches.length;
+    // 3. Class Detection & Name Validation
+    const isLeetCode = rule.platform === 'leetcode';
+    const classRegex = /\b(?:public\s+)?class\s+([A-Za-z0-9_$]+)/g;
+    const matches = Array.from(codeWithoutStrings.matchAll(classRegex));
+    const publicClassMatches = Array.from(codeWithoutStrings.matchAll(/\bpublic\s+class\s+([A-Za-z0-9_$]+)/g));
+    const publicClassesCount = publicClassMatches.length;
 
     let detectedClass = 'None';
-    if (publicClassesCount > 0) {
-      detectedClass = publicMatches[0][1];
+    if (matches.length > 0) {
+      detectedClass = matches[0][1];
     }
 
     let structurePass = true;
 
-    if (publicClassesCount === 0) {
+    if (matches.length === 0) {
+      structurePass = false;
+      issues.push(`No class found. Required class '${rule.className}'.`);
+    } else if (detectedClass !== rule.className) {
+      structurePass = false;
+      issues.push(
+        `Invalid class name: expected 'class ${rule.className}', but detected 'class ${detectedClass}'.`
+      );
+    } else if (!isLeetCode && publicClassesCount === 0) {
       structurePass = false;
       issues.push(`No public class found. Required public class '${rule.className}'.`);
     } else if (publicClassesCount > 1) {
       structurePass = false;
       issues.push(
-        `Multiple public classes detected (${publicClassesCount}). Exactly one public class '${rule.className}' is required.`
-      );
-    } else if (detectedClass !== rule.className) {
-      structurePass = false;
-      issues.push(
-        `Invalid public class name: expected 'public class ${rule.className}', but detected 'public class ${detectedClass}'.`
+        `Multiple public classes detected (${publicClassesCount}). Exactly one primary class '${rule.className}' is required.`
       );
     }
 
@@ -91,7 +96,7 @@ export class JavaStructureValidator {
 
     // Check for nested duplicate Solution/Main class structure
     if (rule.className === 'Solution') {
-      const nestedSolutionRegex = /\bpublic\s+class\s+Solution\s*\{[\s\S]*?\bpublic\s+class\s+Solution\b/;
+      const nestedSolutionRegex = /\b(?:public\s+)?class\s+Solution\s*\{[\s\S]*?\b(?:public\s+)?class\s+Solution\b/;
       if (nestedSolutionRegex.test(codeWithoutStrings)) {
         structurePass = false;
         issues.push('Nested duplicate Solution class detected.');
@@ -123,9 +128,9 @@ export class JavaStructureValidator {
       .replace(/\bimport\s+[\w.*]+;/g, '')
       .trim();
 
-    if (codeWithoutPackageImports.length > 0 && !codeWithoutPackageImports.startsWith('public class')) {
+    if (codeWithoutPackageImports.length > 0 && !codeWithoutPackageImports.startsWith('public class') && !codeWithoutPackageImports.startsWith('class')) {
       structurePass = false;
-      issues.push('Found executable code or statements outside the primary public class declaration.');
+      issues.push('Found executable code or statements outside the primary class declaration.');
     }
 
     // 7. Comment Validation Check
