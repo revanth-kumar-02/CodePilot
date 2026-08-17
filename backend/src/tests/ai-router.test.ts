@@ -74,8 +74,8 @@ describe('AIProviderRouter — Workflow Key Separation & Rate Limit Tests', () =
 
   test('Solution Plan uses ANALYSIS key', async () => {
     const router = new AIProviderRouter({
-      analysis: { provider: 'mock', apiKey: 'gsk_analysis_key', model: 'llama-3.1-8b-instant' },
-      code: { provider: 'mock', apiKey: 'gsk_code_key', model: 'llama-3.3-70b-versatile' },
+      analysis: { provider: 'mock', apiKey: 'gsk_analysis_key', model: 'openai/gpt-oss-120b' },
+      code: { provider: 'mock', apiKey: 'gsk_code_key', model: 'openai/gpt-oss-120b' },
     });
 
     const plan = await router.generateSolutionPlan(sampleProblem);
@@ -85,8 +85,8 @@ describe('AIProviderRouter — Workflow Key Separation & Rate Limit Tests', () =
 
   test('Code Generation uses CODE key', async () => {
     const router = new AIProviderRouter({
-      analysis: { provider: 'mock', apiKey: 'gsk_analysis_key', model: 'llama-3.1-8b-instant' },
-      code: { provider: 'mock', apiKey: 'gsk_code_key', model: 'llama-3.3-70b-versatile' },
+      analysis: { provider: 'mock', apiKey: 'gsk_analysis_key', model: 'openai/gpt-oss-120b' },
+      code: { provider: 'mock', apiKey: 'gsk_code_key', model: 'openai/gpt-oss-120b' },
     });
 
     const code = await router.generateCode(sampleProblem, samplePlan, 'java');

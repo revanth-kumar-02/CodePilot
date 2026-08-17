@@ -22,8 +22,7 @@ export class GroqProvider implements AIProvider {
     this.workflowName = workflowName;
   }
 
-  private getApiKey(): string {
-    if (this.customApiKey) return this.customApiKey;
+  private getEnvApiKey(): string {
     if (this.workflowName === 'analysis') {
       return process.env.GROQ_ANALYSIS_KEY || process.env.GROQ_API_KEY || '';
     } else {
@@ -31,9 +30,14 @@ export class GroqProvider implements AIProvider {
     }
   }
 
+  private getApiKey(): string {
+    if (this.customApiKey) return this.customApiKey;
+    return this.getEnvApiKey();
+  }
+
   public async analyzeProblem(problem: ProblemInput): Promise<ProblemAnalysis> {
     const apiKey = this.getApiKey();
-    const model = this.customModel || process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_FAST_MODEL || 'llama-3.1-8b-instant';
+    const model = this.customModel || process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
     if (!apiKey) {
       throw new AIError(
@@ -71,7 +75,7 @@ export class GroqProvider implements AIProvider {
 
   public async reasonProblem(problem: ProblemInput, isRecoveryAttempt: boolean = false): Promise<SolutionPlan> {
     const apiKey = this.getApiKey();
-    const model = this.customModel || process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
+    const model = this.customModel || process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
     if (!apiKey) {
       throw new AIError(
@@ -117,7 +121,7 @@ export class GroqProvider implements AIProvider {
   ): Promise<GeneratedCode> {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
-    const model = this.customModel || process.env.GROQ_CODE_MODEL || process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
+    const model = this.customModel || process.env.GROQ_CODE_MODEL || process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
     const activeRule = rule || PlatformRules.getRule(problem.source?.hostname || problem.source?.url || problem.source?.platform);
 
     if (!apiKey) {
@@ -173,7 +177,8 @@ export class GroqProvider implements AIProvider {
     url: string,
     headers: Record<string, string>,
     payload: any,
-    parseFn: (content: string) => T
+    parseFn: (content: string) => T,
+    attempt: number = 1
   ): Promise<T> {
     const timeoutMs = Number(process.env.AI_TIMEOUT_MS) || 45000;
     const controller = new AbortController();
@@ -193,6 +198,13 @@ export class GroqProvider implements AIProvider {
         const errText = await response.text();
 
         if (response.status === 401 || response.status === 403) {
+          const envKey = this.getEnvApiKey();
+          if (this.customApiKey && envKey && envKey !== this.customApiKey) {
+            console.warn(`[GroqProvider] Custom header API key was unauthorized (${response.status}). Retrying request using backend environment key...`);
+            this.customApiKey = undefined;
+            const fallbackHeaders = { ...headers, Authorization: `Bearer ${envKey}` };
+            return this.executeRequest(url, fallbackHeaders, payload, parseFn, attempt);
+          }
           throw new AIError('AI_AUTHENTICATION_ERROR', `Invalid or unauthorized Groq ${this.workflowName} API Key.`, 401, false);
         }
 
@@ -233,7 +245,15 @@ export class GroqProvider implements AIProvider {
       } else if (err instanceof Error && err.name === 'AbortError') {
         throw new AIError('AI_TIMEOUT', `Groq request timed out after ${timeoutMs}ms.`, 504, true);
       } else {
-        throw new AIError('AI_UNKNOWN_ERROR', `Unexpected network error: ${err instanceof Error ? err.message : String(err)}`, 500, true);
+        // Auto-retry once for transient network fetch errors
+        if (attempt === 1) {
+          console.warn(`[GroqProvider] Groq fetch network error on attempt 1 (${err instanceof Error ? err.message : String(err)}). Retrying in 300ms...`);
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          return this.executeRequest(url, headers, payload, parseFn, 2);
+        }
+
+        const cause = (err as any)?.cause ? ` (Cause: ${(err as any).cause})` : '';
+        throw new AIError('AI_UNKNOWN_ERROR', `Unexpected network error: ${err instanceof Error ? err.message : String(err)}${cause}`, 500, true);
       }
     }
   }

@@ -72,6 +72,7 @@ export const App: React.FC = () => {
   const [allTabs, setAllTabs] = useState<TabRuntimeState[]>([]);
   const [viewMode, setViewMode] = useState<'current' | 'analysis' | 'plan' | 'code' | 'diagnostics' | 'all'>('current');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [rateLimitAlert, setRateLimitAlert] = useState<string | null>(null);
 
   // Loading States
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -241,10 +242,19 @@ export const App: React.FC = () => {
     });
   };
 
+  const checkRateLimitError = (errMsg?: string) => {
+    if (!errMsg) return;
+    const lower = errMsg.toLowerCase();
+    if (lower.includes('rate limit') || lower.includes('429') || lower.includes('limit reached') || lower.includes('ai_rate_limited')) {
+      setRateLimitAlert(errMsg);
+    }
+  };
+
   const handleAnalyzeProblem = (): void => {
     if (isAnalyzing) return;
     setIsAnalyzing(true);
     setViewMode('analysis');
+    setRateLimitAlert(null);
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       setTimeout(() => setIsAnalyzing(false), 500);
       return;
@@ -255,6 +265,9 @@ export const App: React.FC = () => {
       if (!err && res?.analysis) {
         logger.info('AI Analysis complete:', res.analysis.status);
       }
+      if (res?.error) {
+        checkRateLimitError(typeof res.error === 'string' ? res.error : (res.error as any).message);
+      }
       fetchRuntimeState();
     });
   };
@@ -263,6 +276,7 @@ export const App: React.FC = () => {
     if (isPlanning) return;
     setIsPlanning(true);
     setViewMode('plan');
+    setRateLimitAlert(null);
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       setTimeout(() => setIsPlanning(false), 500);
       return;
@@ -273,6 +287,9 @@ export const App: React.FC = () => {
       if (!err && res?.plan) {
         logger.info('Reasoning plan generated:', res.plan.status);
       }
+      if (res?.error) {
+        checkRateLimitError(typeof res.error === 'string' ? res.error : (res.error as any).message);
+      }
       fetchRuntimeState();
     });
   };
@@ -281,6 +298,7 @@ export const App: React.FC = () => {
     if (isGenerating) return;
     setIsGenerating(true);
     setViewMode('code');
+    setRateLimitAlert(null);
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       setTimeout(() => setIsGenerating(false), 500);
       return;
@@ -290,6 +308,9 @@ export const App: React.FC = () => {
       setIsGenerating(false);
       if (!err && res?.generatedCode) {
         logger.info('Code generation complete for language:', res.generatedCode.language);
+      }
+      if (res?.error) {
+        checkRateLimitError(typeof res.error === 'string' ? res.error : (res.error as any).message);
       }
       fetchRuntimeState();
     });
@@ -352,24 +373,75 @@ export const App: React.FC = () => {
         onDragEnd={handleDragEnd}
       />
 
+      {rateLimitAlert && (
+        <div style={{
+          background: '#450a0a',
+          color: '#fca5a5',
+          border: '1px solid #dc2626',
+          borderRadius: '6px',
+          padding: '8px 12px',
+          margin: '8px 12px 0 12px',
+          fontSize: '11px',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px'
+        }}>
+          <div>
+            <span style={{ fontSize: '13px' }}>⚠️</span> <strong>API Key Limit Reached:</strong> {rateLimitAlert}
+          </div>
+          <button
+            onClick={() => {
+              setRateLimitAlert(null);
+              setIsSettingsOpen(true);
+            }}
+            style={{
+              background: '#ef4444',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '4px 8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Change Keys
+          </button>
+        </div>
+      )}
+
       <nav className="tab-nav">
         <button className={`nav-btn ${viewMode === 'current' ? 'active' : ''}`} onClick={() => setViewMode('current')}>
-          Extraction
+          <span>Extraction</span>
+          {isRefreshing && <span className="btn-spinner" style={{ width: '10px', height: '10px', marginLeft: '4px' }}></span>}
         </button>
         <button className={`nav-btn ${viewMode === 'analysis' ? 'active' : ''}`} onClick={() => setViewMode('analysis')}>
-          AI Analysis
+          <span>AI Analysis</span>
+          {(isAnalyzing || activeTab?.aiAnalysis?.status === 'pending') && (
+            <span className="btn-spinner" style={{ width: '10px', height: '10px', marginLeft: '4px' }}></span>
+          )}
         </button>
         <button className={`nav-btn ${viewMode === 'plan' ? 'active' : ''}`} onClick={() => setViewMode('plan')}>
-          Solution Plan
+          <span>Solution Plan</span>
+          {(isPlanning || activeTab?.reasoning?.status === 'pending') && (
+            <span className="btn-spinner" style={{ width: '10px', height: '10px', marginLeft: '4px' }}></span>
+          )}
         </button>
         <button className={`nav-btn ${viewMode === 'code' ? 'active' : ''}`} onClick={() => setViewMode('code')}>
-          Code
+          <span>Code</span>
+          {(isGenerating || activeTab?.codeGeneration?.status === 'GENERATING') && (
+            <span className="btn-spinner" style={{ width: '10px', height: '10px', marginLeft: '4px' }}></span>
+          )}
         </button>
         <button className={`nav-btn ${viewMode === 'diagnostics' ? 'active' : ''}`} onClick={() => setViewMode('diagnostics')}>
-          Diagnostics
+          <span>Diagnostics</span>
+          {isRefreshing && <span className="btn-spinner" style={{ width: '10px', height: '10px', marginLeft: '4px' }}></span>}
         </button>
         <button className={`nav-btn ${viewMode === 'all' ? 'active' : ''}`} onClick={() => setViewMode('all')}>
-          Tabs ({allTabs.length})
+          <span>Tabs ({allTabs.length})</span>
         </button>
       </nav>
 

@@ -468,16 +468,16 @@ export class MessageRouter {
 
             const settings = await SettingsStorage.getSettings();
             const baseUrl = settings.serverUrl || 'http://localhost:3000';
-            const analysisKey = settings.groqAnalysisKey || settings.apiKey;
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
+            
+            const analysisKey = settings.groqAnalysisKey?.trim() || settings.apiKey?.trim();
+            if (analysisKey) headers['X-AI-Analysis-Key'] = analysisKey;
+            if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
 
             fetch(`${baseUrl}/api/ai/analyze`, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-AI-Provider': settings.aiProvider,
-                'X-AI-Analysis-Key': analysisKey,
-                'X-AI-Api-Key': settings.apiKey,
-              },
+              headers,
               body: JSON.stringify({ problem: problemPayload }),
             })
               .then(async (res) => {
@@ -504,6 +504,9 @@ export class MessageRouter {
                   });
                 } else {
                   const errMsg = data.error?.message || 'Failed to analyze problem with AI service.';
+                  this.runtime.tabManager.updateTab(tabId, {
+                    aiAnalysis: { status: 'failed', error: errMsg, lastUpdated: Date.now() },
+                  });
                   sendResponse({
                     type: 'AI_ANALYSIS_RESULT',
                     error: errMsg,
@@ -512,6 +515,9 @@ export class MessageRouter {
               })
               .catch((err) => {
                 const errMsg = err instanceof Error ? err.message : String(err);
+                this.runtime.tabManager.updateTab(tabId, {
+                  aiAnalysis: { status: 'failed', error: errMsg, lastUpdated: Date.now() },
+                });
                 sendResponse({
                   type: 'AI_ANALYSIS_RESULT',
                   error: errMsg,
@@ -570,18 +576,23 @@ export class MessageRouter {
             return false;
           }
 
+          this.runtime.tabManager.updateTab(tabId, {
+            reasoning: { status: 'pending', lastUpdated: Date.now() },
+          });
+
           const settings = await SettingsStorage.getSettings();
           const baseUrl = settings.serverUrl || 'http://localhost:3000';
-          const analysisKey = settings.groqAnalysisKey || settings.apiKey;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
+
+          const reasoningKey = settings.groqReasoningKey?.trim() || settings.groqAnalysisKey?.trim() || settings.apiKey?.trim();
+          if (reasoningKey) headers['X-AI-Reasoning-Key'] = reasoningKey;
+          if (settings.groqAnalysisKey?.trim()) headers['X-AI-Analysis-Key'] = settings.groqAnalysisKey.trim();
+          if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
 
           fetch(`${baseUrl}/api/ai/reason`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-AI-Provider': settings.aiProvider,
-              'X-AI-Analysis-Key': analysisKey,
-              'X-AI-Api-Key': settings.apiKey,
-            },
+            headers,
             body: JSON.stringify({ problem: extractedProblem }),
           })
             .then(async (res) => {
@@ -610,6 +621,9 @@ export class MessageRouter {
                 });
               } else {
                 const errMsg = data.error?.message || 'Failed to generate solution plan with reasoning engine.';
+                this.runtime.tabManager.updateTab(tabId, {
+                  reasoning: { status: 'failed', error: errMsg, lastUpdated: Date.now() },
+                });
                 sendResponse({
                   type: 'REASONING_RESULT',
                   error: errMsg,
@@ -618,6 +632,9 @@ export class MessageRouter {
             })
             .catch((err) => {
               const errMsg = err instanceof Error ? err.message : String(err);
+              this.runtime.tabManager.updateTab(tabId, {
+                reasoning: { status: 'failed', error: errMsg, lastUpdated: Date.now() },
+              });
               sendResponse({
                 type: 'REASONING_RESULT',
                 error: errMsg,

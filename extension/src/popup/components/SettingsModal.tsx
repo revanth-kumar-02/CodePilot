@@ -115,14 +115,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </select>
           </div>
 
+          {/* Provider API Key Link Banner */}
+          <div
+            style={{
+              padding: '8px 10px',
+              borderRadius: '6px',
+              background: '#0f172a',
+              border: '1px solid #334155',
+              fontSize: '11px',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '6px',
+            }}
+          >
+            <span>💡 <strong>How to get an API Key:</strong></span>
+            {settings.aiProvider === 'groq' && (
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#60a5fa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Get Groq Free Key ↗
+              </a>
+            )}
+            {settings.aiProvider === 'openrouter' && (
+              <a
+                href="https://openrouter.ai/keys"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#60a5fa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Get OpenRouter Key ↗
+              </a>
+            )}
+            {settings.aiProvider === 'openai' && (
+              <a
+                href="https://platform.openai.com/api-keys"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#60a5fa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Get OpenAI Key ↗
+              </a>
+            )}
+            {settings.aiProvider === 'gemini' && (
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#60a5fa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Get Gemini Free Key ↗
+              </a>
+            )}
+            {settings.aiProvider === 'anthropic' && (
+              <a
+                href="https://console.anthropic.com/settings/keys"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#60a5fa', textDecoration: 'underline', fontWeight: 600 }}
+              >
+                Get Anthropic Key ↗
+              </a>
+            )}
+            {settings.aiProvider === 'mock' && (
+              <span style={{ color: '#34d399', fontWeight: 600 }}>No Key Needed (Offline Mode)</span>
+            )}
+          </div>
+
           {/* Dedicated Keys for Groq */}
           {settings.aiProvider === 'groq' ? (
             <>
-              {/* Analysis Workflow Key */}
+              {/* Key 1: Analysis & Reasoning Key */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
-                    Groq Analysis API Key (GROQ_ANALYSIS_KEY)
+                    Groq Key 1: Analysis & Reasoning (GROQ_ANALYSIS_KEY)
                   </label>
                   <button
                     type="button"
@@ -151,10 +222,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 />
               </div>
 
-              {/* Code Workflow Key */}
+              {/* Key 2: Code Generation Key */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
-                  Groq Code API Key (GROQ_CODE_KEY)
+                  Groq Key 2: Code Generation (GROQ_CODE_KEY)
                 </label>
                 <input
                   type={showApiKey ? 'text' : 'password'}
@@ -174,7 +245,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   }}
                 />
                 <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-                  Dedicated keys prevent rate-limit contention between AI Analysis and Code Generation.
+                  Splitting requests between 2 keys prevents rate limits between Problem Analysis and Code Generation.
                 </span>
               </div>
             </>

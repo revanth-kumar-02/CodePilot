@@ -82,14 +82,22 @@ export class GeminiProvider implements AIProvider {
   }
 
   private async executeGenerateContent(systemPrompt: string, userPrompt: string, jsonResponse: boolean = false): Promise<string> {
+    if (!this.apiKey || !this.apiKey.startsWith('AIzaSy')) {
+      throw new AIError(
+        'AI_AUTHENTICATION_ERROR',
+        'Invalid Google Gemini API Key. Google AI Studio keys must start with "AIzaSy...". Get a free key at https://aistudio.google.com/app/apikey',
+        401,
+        false
+      );
+    }
+
     const candidateModels = Array.from(
       new Set([
         this.model,
-        process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-        'gemini-2.0-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-2.5-flash',
+        process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+        'gemini-1.5-flash',
         'gemini-1.5-pro',
+        'gemini-2.0-flash',
       ])
     );
 
@@ -154,7 +162,7 @@ export class GeminiProvider implements AIProvider {
         return text;
       } catch (err) {
         clearTimeout(timeoutId);
-        if (err instanceof AIError && (err.statusCode === 401 || err.statusCode === 429)) {
+        if (err instanceof AIError && (err.statusHttp === 401 || err.statusHttp === 429)) {
           throw err;
         }
         if ((err as Error)?.name === 'AbortError') {

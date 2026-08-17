@@ -16,18 +16,21 @@ export interface WorkflowConfig {
 
 export interface CentralizedAIConfig {
   analysis: WorkflowConfig;
+  reasoning: WorkflowConfig;
   code: WorkflowConfig;
 }
 
 export class AIProviderRouter {
   private config: CentralizedAIConfig;
   private analysisProvider: AIProvider;
+  private reasoningProvider: AIProvider;
   private codeProvider: AIProvider;
   private inFlightRequests: Map<string, Promise<any>> = new Map();
 
   constructor(customConfig?: Partial<CentralizedAIConfig>) {
     this.config = this.loadConfig(customConfig);
     this.analysisProvider = this.createProvider(this.config.analysis, 'analysis');
+    this.reasoningProvider = this.createProvider(this.config.reasoning, 'analysis');
     this.codeProvider = this.createProvider(this.config.code, 'code');
   }
 
@@ -38,6 +41,11 @@ export class AIProviderRouter {
         apiKey: this.config.analysis.apiKey ? '***PROTECTED***' : '',
         model: this.config.analysis.model,
       },
+      reasoning: {
+        provider: this.config.reasoning.provider,
+        apiKey: this.config.reasoning.apiKey ? '***PROTECTED***' : '',
+        model: this.config.reasoning.model,
+      },
       code: {
         provider: this.config.code.provider,
         apiKey: this.config.code.apiKey ? '***PROTECTED***' : '',
@@ -47,12 +55,13 @@ export class AIProviderRouter {
   }
 
   private loadConfig(override?: Partial<CentralizedAIConfig>): CentralizedAIConfig {
-    const groqAnalysisKey = process.env.GROQ_ANALYSIS_KEY || process.env.GROQ_API_KEY || '';
-    const groqCodeKey = process.env.GROQ_CODE_KEY || process.env.GROQ_API_KEY || '';
+    const groqAnalysisKey = process.env.GROQ_ANALYSIS_KEY || process.env.ANALYSIS_API_KEY || process.env.GROQ_API_KEY || '';
+    const groqReasoningKey = process.env.GROQ_REASONING_KEY || process.env.REASONING_API_KEY || groqAnalysisKey || process.env.GROQ_API_KEY || '';
+    const groqCodeKey = process.env.GROQ_CODE_KEY || process.env.CODE_API_KEY || process.env.GROQ_API_KEY || '';
 
     // Auto-detect active provider if not explicitly configured
     let defaultProvider = process.env.AI_PROVIDER || 'groq';
-    if (!process.env.AI_PROVIDER && !groqAnalysisKey && !groqCodeKey) {
+    if (!process.env.AI_PROVIDER && !groqAnalysisKey && !groqCodeKey && !groqReasoningKey) {
       if (process.env.GEMINI_API_KEY) {
         defaultProvider = 'gemini';
       } else if (process.env.OPENROUTER_API_KEY) {
@@ -61,6 +70,7 @@ export class AIProviderRouter {
     }
 
     const analysisProvider = override?.analysis?.provider || process.env.AI_ANALYSIS_PROVIDER || defaultProvider;
+    const reasoningProvider = override?.reasoning?.provider || process.env.AI_REASONING_PROVIDER || defaultProvider;
     const codeProvider = override?.code?.provider || process.env.AI_CODE_PROVIDER || defaultProvider;
 
     const getApiKey = (provider: string, groqKey: string) => {
@@ -69,24 +79,30 @@ export class AIProviderRouter {
       return groqKey;
     };
 
-    const getModel = (provider: string, isCode: boolean) => {
+    const getModel = (provider: string, stage: 'analysis' | 'reasoning' | 'code') => {
       if (provider === 'gemini') return process.env.GEMINI_MODEL || 'gemini-2.0-flash';
       if (provider === 'openrouter') return process.env.OPENROUTER_MODEL || 'qwen/qwen-2.5-coder-32b-instruct';
-      return isCode
-        ? process.env.GROQ_CODE_MODEL || process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile'
-        : process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_FAST_MODEL || 'llama-3.1-8b-instant';
+      if (stage === 'analysis') {
+        return process.env.GROQ_ANALYSIS_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+      }
+      return process.env.GROQ_CODE_MODEL || process.env.GROQ_REASONING_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
     };
 
     return {
       analysis: {
         provider: analysisProvider,
         apiKey: override?.analysis?.apiKey || getApiKey(analysisProvider, groqAnalysisKey),
-        model: override?.analysis?.model || getModel(analysisProvider, false),
+        model: override?.analysis?.model || getModel(analysisProvider, 'analysis'),
+      },
+      reasoning: {
+        provider: reasoningProvider,
+        apiKey: override?.reasoning?.apiKey || getApiKey(reasoningProvider, groqReasoningKey),
+        model: override?.reasoning?.model || getModel(reasoningProvider, 'reasoning'),
       },
       code: {
         provider: codeProvider,
         apiKey: override?.code?.apiKey || getApiKey(codeProvider, groqCodeKey),
-        model: override?.code?.model || getModel(codeProvider, true),
+        model: override?.code?.model || getModel(codeProvider, 'code'),
       },
     };
   }
@@ -130,11 +146,11 @@ export class AIProviderRouter {
 
   public async generateSolutionPlan(problem: ProblemInput, isRecoveryAttempt: boolean = false, overrideApiKey?: string): Promise<SolutionPlan> {
     const provider = overrideApiKey
-      ? new GroqProvider(overrideApiKey, this.config.analysis.model, 'analysis')
-      : this.analysisProvider;
+      ? new GroqProvider(overrideApiKey, this.config.reasoning.model, 'analysis')
+      : this.reasoningProvider;
 
     const probId = problem.id || problem.title || 'problem';
-    const requestKey = `plan:${probId}:${this.config.analysis.model}:${isRecoveryAttempt}`;
+    const requestKey = `plan:${probId}:${this.config.reasoning.model}:${isRecoveryAttempt}`;
 
     return this.deduplicateRequest(requestKey, () =>
       this.executeWithFallback(
@@ -184,7 +200,7 @@ export class AIProviderRouter {
       return await primaryFn();
     } catch (primaryError) {
       const geminiKey = process.env.GEMINI_API_KEY;
-      if (geminiKey) {
+      if (geminiKey && geminiKey.startsWith('AIzaSy')) {
         console.warn(
           `[CodePilot][AIProviderRouter] Primary provider failed during ${operationName} (${primaryError instanceof Error ? primaryError.message : primaryError}). Falling back to Gemini...`
         );

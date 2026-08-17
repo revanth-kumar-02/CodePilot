@@ -4,6 +4,7 @@ export interface UserSettings {
   aiProvider: SupportedAIProvider;
   apiKey: string;
   groqAnalysisKey?: string;
+  groqReasoningKey?: string;
   groqCodeKey?: string;
   serverUrl: string;
 }
@@ -12,6 +13,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   aiProvider: 'groq',
   apiKey: '',
   groqAnalysisKey: '',
+  groqReasoningKey: '',
   groqCodeKey: '',
   serverUrl: 'http://localhost:3000',
 };

@@ -11,13 +11,80 @@ const reasoningService = new ReasoningService();
 const codeGeneratorService = new CodeGeneratorService();
 const codeRepairService = new CodeRepairService();
 
-function resolveApiKey(req: Request, keyType: 'analysis' | 'code') {
+function resolveApiKey(req: Request, keyType: 'analysis' | 'reasoning' | 'code'): string | undefined {
+  const getClean = (val: any): string | undefined => {
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+    return undefined;
+  };
+
   if (keyType === 'analysis') {
-    return (req.headers['x-ai-analysis-key'] as string) || (req.headers['x-ai-api-key'] as string) || req.body?.apiKey;
+    return getClean(req.headers['x-ai-analysis-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.analysisApiKey) || getClean(req.body?.apiKey);
+  } else if (keyType === 'reasoning') {
+    return getClean(req.headers['x-ai-reasoning-key']) || getClean(req.headers['x-ai-analysis-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.reasoningApiKey) || getClean(req.body?.apiKey);
   } else {
-    return (req.headers['x-ai-code-key'] as string) || (req.headers['x-ai-api-key'] as string) || req.body?.apiKey;
+    return getClean(req.headers['x-ai-code-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.codeApiKey) || getClean(req.body?.apiKey);
   }
 }
+
+router.post('/solve-pipeline', async (req: Request, res: Response) => {
+  try {
+    const problemPayload = req.body?.problem || req.body;
+    const targetLanguage = req.body?.targetLanguage || 'cpp';
+    const targetVersion = req.body?.targetVersion;
+
+    const analysisKey = resolveApiKey(req, 'analysis');
+    const reasoningKey = resolveApiKey(req, 'reasoning');
+    const codeKey = resolveApiKey(req, 'code');
+
+    // Agent 1: Analysis Agent
+    const analysis = await aiService.analyzeProblem(problemPayload, analysisKey);
+
+    // Agent 2: Solution Reasoning Agent
+    const { plan, validation } = await reasoningService.reasonProblem(problemPayload, reasoningKey);
+
+    // Agent 3: Code Generation Agent
+    const { generatedCode, durationMs } = await codeGeneratorService.generateCode(
+      problemPayload,
+      plan,
+      targetLanguage,
+      targetVersion,
+      codeKey
+    );
+
+    return res.status(200).json({
+      status: 'success',
+      pipeline: {
+        analysis,
+        plan,
+        validation,
+        generatedCode,
+        durationMs,
+      },
+    });
+  } catch (error: unknown) {
+    if (error instanceof AIError) {
+      return res.status(error.statusHttp).json({
+        status: 'failed',
+        error: {
+          code: error.code,
+          message: error.code === 'AI_RATE_LIMITED'
+            ? 'API key limit reached. Please switch keys or wait for rate limit reset.'
+            : error.message,
+        },
+      });
+    }
+
+    return res.status(500).json({
+      status: 'failed',
+      error: {
+        code: 'AI_UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : 'An unexpected server error occurred.',
+      },
+    });
+  }
+});
 
 router.post('/analyze', async (req: Request, res: Response) => {
   try {
@@ -34,7 +101,9 @@ router.post('/analyze', async (req: Request, res: Response) => {
         status: 'failed',
         error: {
           code: error.code,
-          message: error.message,
+          message: error.code === 'AI_RATE_LIMITED'
+            ? 'Agent 1 (Analysis) API key limit reached. Please switch keys or wait for rate limit reset.'
+            : error.message,
         },
       });
     }
@@ -52,7 +121,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
 router.post('/reason', async (req: Request, res: Response) => {
   try {
     const problemPayload = req.body?.problem || req.body;
-    const apiKey = resolveApiKey(req, 'analysis');
+    const apiKey = resolveApiKey(req, 'reasoning');
     const { plan, validation, reasoningDurationMs } = await reasoningService.reasonProblem(problemPayload, apiKey);
     return res.status(200).json({
       status: 'success',
