@@ -467,7 +467,7 @@ export class MessageRouter {
             });
 
             const settings = await SettingsStorage.getSettings();
-            const baseUrl = settings.serverUrl || 'http://localhost:3000';
+            const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
             if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
             
@@ -581,7 +581,7 @@ export class MessageRouter {
           });
 
           const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
 
@@ -712,7 +712,7 @@ export class MessageRouter {
           await this.syncSessionToTabState(tabId);
 
           const codeGenSettings = await SettingsStorage.getSettings();
-          const codeGenBaseUrl = codeGenSettings.serverUrl || 'http://localhost:3000';
+          const codeGenBaseUrl = codeGenSettings.serverUrl || 'https://codepilot-6hi8.onrender.com';
           const codeGenHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
           if (codeGenSettings.aiProvider) codeGenHeaders['X-AI-Provider'] = codeGenSettings.aiProvider;
 
@@ -924,7 +924,7 @@ export class MessageRouter {
           }
 
           const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
 
           fetch(`${baseUrl}/api/ai/analyze-error`, {
             method: 'POST',
@@ -994,7 +994,7 @@ export class MessageRouter {
           }
 
           const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'http://localhost:3000';
+          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
 
           fetch(`${baseUrl}/api/ai/repair-code`, {
             method: 'POST',

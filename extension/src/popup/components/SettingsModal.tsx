@@ -291,7 +291,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </label>
             <input
               type="text"
-              placeholder="http://localhost:3000"
+              placeholder="https://codepilot-6hi8.onrender.com"
               value={settings.serverUrl}
               onChange={(e) => setSettings({ ...settings, serverUrl: e.target.value })}
               style={{

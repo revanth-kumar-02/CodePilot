@@ -15,7 +15,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   groqAnalysisKey: '',
   groqReasoningKey: '',
   groqCodeKey: '',
-  serverUrl: 'http://localhost:3000',
+  serverUrl: 'https://codepilot-6hi8.onrender.com',
 };
 
 export class SettingsStorage {
