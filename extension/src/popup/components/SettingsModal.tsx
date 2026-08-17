@@ -18,6 +18,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     }
   }, [isOpen]);
 
+  const updateAndSave = (updated: UserSettings) => {
+    setSettings(updated);
+    SettingsStorage.saveSettings(updated);
+  };
+
   if (!isOpen) return null;
 
   const handleSave = async () => {
@@ -94,7 +99,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </label>
             <select
               value={settings.aiProvider}
-              onChange={(e) => setSettings({ ...settings, aiProvider: e.target.value as SupportedAIProvider })}
+              onChange={(e) => updateAndSave({ ...settings, aiProvider: e.target.value as SupportedAIProvider })}
               style={{
                 width: '100%',
                 padding: '8px',
@@ -207,7 +212,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   type={showApiKey ? 'text' : 'password'}
                   placeholder="gsk_analysis_..."
                   value={settings.groqAnalysisKey || ''}
-                  onChange={(e) => setSettings({ ...settings, groqAnalysisKey: e.target.value })}
+                  onChange={(e) => updateAndSave({ ...settings, groqAnalysisKey: e.target.value })}
                   style={{
                     width: '100%',
                     padding: '8px 10px',
@@ -231,7 +236,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   type={showApiKey ? 'text' : 'password'}
                   placeholder="gsk_code_..."
                   value={settings.groqCodeKey || ''}
-                  onChange={(e) => setSettings({ ...settings, groqCodeKey: e.target.value })}
+                  onChange={(e) => updateAndSave({ ...settings, groqCodeKey: e.target.value })}
                   style={{
                     width: '100%',
                     padding: '8px 10px',
@@ -268,7 +273,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 type={showApiKey ? 'text' : 'password'}
                 placeholder="sk-..."
                 value={settings.apiKey}
-                onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
+                onChange={(e) => updateAndSave({ ...settings, apiKey: e.target.value })}
                 style={{
                   width: '100%',
                   padding: '8px 10px',

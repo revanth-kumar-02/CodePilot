@@ -19,12 +19,18 @@ function resolveApiKey(req: Request, keyType: 'analysis' | 'reasoning' | 'code')
     return undefined;
   };
 
+  const analysisHeader = getClean(req.headers['x-ai-analysis-key']);
+  const reasoningHeader = getClean(req.headers['x-ai-reasoning-key']);
+  const codeHeader = getClean(req.headers['x-ai-code-key']);
+  const mainHeader = getClean(req.headers['x-ai-api-key']);
+  const bodyKey = getClean(req.body?.apiKey);
+
   if (keyType === 'analysis') {
-    return getClean(req.headers['x-ai-analysis-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.analysisApiKey) || getClean(req.body?.apiKey);
+    return analysisHeader || reasoningHeader || codeHeader || mainHeader || getClean(req.body?.analysisApiKey) || bodyKey;
   } else if (keyType === 'reasoning') {
-    return getClean(req.headers['x-ai-reasoning-key']) || getClean(req.headers['x-ai-analysis-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.reasoningApiKey) || getClean(req.body?.apiKey);
+    return reasoningHeader || analysisHeader || codeHeader || mainHeader || getClean(req.body?.reasoningApiKey) || bodyKey;
   } else {
-    return getClean(req.headers['x-ai-code-key']) || getClean(req.headers['x-ai-api-key']) || getClean(req.body?.codeApiKey) || getClean(req.body?.apiKey);
+    return codeHeader || analysisHeader || reasoningHeader || mainHeader || getClean(req.body?.codeApiKey) || bodyKey;
   }
 }
 
