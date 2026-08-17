@@ -713,16 +713,16 @@ export class MessageRouter {
 
           const codeGenSettings = await SettingsStorage.getSettings();
           const codeGenBaseUrl = codeGenSettings.serverUrl || 'http://localhost:3000';
-          const codeKey = codeGenSettings.groqCodeKey || codeGenSettings.apiKey;
+          const codeGenHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (codeGenSettings.aiProvider) codeGenHeaders['X-AI-Provider'] = codeGenSettings.aiProvider;
+
+          const codeKey = codeGenSettings.groqCodeKey?.trim() || codeGenSettings.apiKey?.trim();
+          if (codeKey) codeGenHeaders['X-AI-Code-Key'] = codeKey;
+          if (codeGenSettings.apiKey?.trim()) codeGenHeaders['X-AI-Api-Key'] = codeGenSettings.apiKey.trim();
 
           fetch(`${codeGenBaseUrl}/api/ai/generate-code`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-AI-Provider': codeGenSettings.aiProvider,
-              'X-AI-Code-Key': codeKey,
-              'X-AI-Api-Key': codeGenSettings.apiKey,
-            },
+            headers: codeGenHeaders,
             body: JSON.stringify({
               problem: extractedProblem,
               plan: solutionPlan,

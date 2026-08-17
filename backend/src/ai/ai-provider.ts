@@ -26,6 +26,7 @@ export type AIErrorCode =
 export class AIError extends Error {
   public readonly code: AIErrorCode;
   public readonly statusHttp: number;
+  public readonly statusCode: number;
   public readonly retryable: boolean;
 
   constructor(code: AIErrorCode, message: string, statusHttp: number = 500, retryable?: boolean) {
@@ -33,6 +34,7 @@ export class AIError extends Error {
     this.name = 'AIError';
     this.code = code;
     this.statusHttp = statusHttp;
+    this.statusCode = statusHttp;
 
     if (retryable !== undefined) {
       this.retryable = retryable;
