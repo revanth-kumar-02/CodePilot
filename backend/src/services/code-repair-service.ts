@@ -192,7 +192,7 @@ ${testOutput ? `TEST OUTPUT:\n${testOutput}` : ''}`;
 
     switch (errClass) {
       case 'Method Signature':
-        specificDiagnosticNotice = `METHOD SIGNATURE ERROR: The method name, parameter types, or return type in the solution does not match what the test driver expected. Identify expected method signature for ${problem.title} on ${platformRule.name} and update code to match.`;
+        specificDiagnosticNotice = `METHOD SIGNATURE ERROR: The method name, parameter types, or return type in the solution does not match what the test driver expected. Identify expected method signature for ${problem.title} on ${platformRule.platform} and update code to match.`;
         break;
       case 'Compilation Error':
       case 'Syntax Error':
@@ -307,7 +307,7 @@ CRITICAL REPAIR MANDATE:
     }
 
     throw new AIError(
-      'REPAIR_VALIDATION_FAILED',
+      'CODE_REPAIR_FAILED',
       `Failed to generate valid repaired code after ${maxAttempts} attempts. Issues: ${lastIssues.join('; ')}`,
       422
     );

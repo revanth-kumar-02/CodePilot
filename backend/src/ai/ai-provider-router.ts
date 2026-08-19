@@ -133,13 +133,18 @@ export class AIProviderRouter {
     const probId = problem.id || problem.title || 'problem';
     const requestKey = `analysis:${probId}:${this.config.analysis.model}`;
 
+    const fallbacks: Array<() => Promise<ProblemAnalysis>> = [];
+    if (process.env.OPENROUTER_API_KEY) {
+      fallbacks.push(() => new OpenRouterProvider(process.env.OPENROUTER_API_KEY).analyzeProblem(problem));
+    }
+    if (process.env.GEMINI_API_KEY) {
+      fallbacks.push(() => new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash').analyzeProblem(problem));
+    }
+
     return this.deduplicateRequest(requestKey, () =>
       this.executeWithFallback(
         () => provider.analyzeProblem(problem),
-        () => {
-          const gemini = new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash');
-          return gemini.analyzeProblem(problem);
-        },
+        fallbacks,
         'analyzeProblem'
       )
     );
@@ -158,13 +163,18 @@ export class AIProviderRouter {
     const probId = problem.id || problem.title || 'problem';
     const requestKey = `plan:${probId}:${this.config.reasoning.model}:${isRecoveryAttempt}`;
 
+    const fallbacks: Array<() => Promise<SolutionPlan>> = [];
+    if (process.env.OPENROUTER_API_KEY) {
+      fallbacks.push(() => new OpenRouterProvider(process.env.OPENROUTER_API_KEY).reasonProblem(problem, isRecoveryAttempt));
+    }
+    if (process.env.GEMINI_API_KEY) {
+      fallbacks.push(() => new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash').reasonProblem(problem, isRecoveryAttempt));
+    }
+
     return this.deduplicateRequest(requestKey, () =>
       this.executeWithFallback(
         () => provider.reasonProblem(problem, isRecoveryAttempt),
-        () => {
-          const gemini = new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash');
-          return gemini.reasonProblem(problem, isRecoveryAttempt);
-        },
+        fallbacks,
         'generateSolutionPlan'
       )
     );
@@ -186,13 +196,18 @@ export class AIProviderRouter {
     const probId = problem.id || problem.title || 'problem';
     const requestKey = `code:${probId}:${targetLanguage}:${this.config.code.model}`;
 
+    const fallbacks: Array<() => Promise<GeneratedCode>> = [];
+    if (process.env.OPENROUTER_API_KEY) {
+      fallbacks.push(() => new OpenRouterProvider(process.env.OPENROUTER_API_KEY).generateCode(problem, plan, targetLanguage, rule, retryInstruction));
+    }
+    if (process.env.GEMINI_API_KEY) {
+      fallbacks.push(() => new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash').generateCode(problem, plan, targetLanguage, rule, retryInstruction));
+    }
+
     return this.deduplicateRequest(requestKey, () =>
       this.executeWithFallback(
         () => provider.generateCode(problem, plan, targetLanguage, rule, retryInstruction),
-        () => {
-          const gemini = new GeminiProvider(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL || 'gemini-2.0-flash');
-          return gemini.generateCode(problem, plan, targetLanguage, rule, retryInstruction);
-        },
+        fallbacks,
         'generateCode'
       )
     );
@@ -200,26 +215,27 @@ export class AIProviderRouter {
 
   private async executeWithFallback<T>(
     primaryFn: () => Promise<T>,
-    fallbackFn: () => Promise<T>,
+    fallbacks: Array<() => Promise<T>>,
     operationName: string
   ): Promise<T> {
     try {
       return await primaryFn();
     } catch (primaryError) {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (geminiKey && geminiKey.startsWith('AIzaSy')) {
-        console.warn(
-          `[CodePilot][AIProviderRouter] Primary provider failed during ${operationName} (${primaryError instanceof Error ? primaryError.message : primaryError}). Falling back to Gemini...`
-        );
+      console.warn(
+        `[CodePilot][AIProviderRouter] Primary provider failed during ${operationName} (${primaryError instanceof Error ? primaryError.message : primaryError}). Attempting fallback providers...`
+      );
+
+      for (let i = 0; i < fallbacks.length; i++) {
         try {
-          return await fallbackFn();
+          return await fallbacks[i]();
         } catch (fallbackError) {
           console.error(
-            `[CodePilot][AIProviderRouter] Gemini fallback provider also failed during ${operationName}:`,
+            `[CodePilot][AIProviderRouter] Fallback provider ${i + 1} failed during ${operationName}:`,
             fallbackError instanceof Error ? fallbackError.message : fallbackError
           );
         }
       }
+
       throw primaryError;
     }
   }
