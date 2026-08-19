@@ -109,6 +109,8 @@ export class FeatureExtractor {
 
     const urlLower = (tabState.url || '').toLowerCase();
     const isCodingPlatform =
+      urlLower.includes('learnlogicify') ||
+      urlLower.includes('logicify') ||
       urlLower.includes('hackerrank.com') ||
       urlLower.includes('leetcode.com') ||
       urlLower.includes('codesignal.com') ||

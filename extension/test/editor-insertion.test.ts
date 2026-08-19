@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { EditorManager } from '../src/content/adapters/editor-manager.js';
+import { EditorManager } from '../src/content/adapters/editor-manager.ts';
 import { EditorAdapter } from '../src/content/adapters/types.js';
 
 class MockAdapter implements EditorAdapter {
@@ -38,15 +38,40 @@ public class Main {
     assert.equal(check.valid, true);
   });
 
-  it('approves single public class Solution for LeetCode platform', () => {
-    const validLeetCode = `
+  it('approves class Solution and public class Solution for LeetCode platform', () => {
+    const validLeetCodeNonPublic = `
+class Solution {
+    public int[] twoSum(int[] nums, int target) {
+        return new int[]{0, 1};
+    }
+}`;
+    const check1 = EditorManager.validateJavaStructure(validLeetCodeNonPublic, 'leetcode');
+    assert.equal(check1.valid, true);
+
+    const validLeetCodePublic = `
 public class Solution {
     public int solve() {
         return 42;
     }
 }`;
-    const check = EditorManager.validateJavaStructure(validLeetCode, 'leetcode');
-    assert.equal(check.valid, true);
+    const check2 = EditorManager.validateJavaStructure(validLeetCodePublic, 'leetcode');
+    assert.equal(check2.valid, true);
+  });
+
+  it('rejects class Main and class OtherName for LeetCode platform', () => {
+    const invalidLeetCodeMain = `
+class Main {
+    public static void main(String[] args) {}
+}`;
+    const check1 = EditorManager.validateJavaStructure(invalidLeetCodeMain, 'leetcode');
+    assert.equal(check1.valid, false);
+
+    const invalidLeetCodeOther = `
+class OtherName {
+    public int solve() { return 0; }
+}`;
+    const check2 = EditorManager.validateJavaStructure(invalidLeetCodeOther, 'leetcode');
+    assert.equal(check2.valid, false);
   });
 
   it('rejects double click / concurrent insertion requests with DUPLICATE_INSERTION_BLOCKED', async () => {

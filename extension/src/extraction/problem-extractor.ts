@@ -14,6 +14,7 @@ import { ProblemAssembler } from './problem-assembler';
 import { ProblemValidator } from './problem-validator';
 import { TextScraperExtractor } from './text-scraper-extractor';
 import { CodeChefProblemExtractor } from './extractors/codechef-extractor';
+import { LearnLogicifyProblemExtractor } from './extractors/learnlogicify-extractor';
 
 export class ProblemExtractor {
   public static extract(
@@ -54,7 +55,14 @@ export class ProblemExtractor {
       }
     }
 
-    // 2. Dedicated CodeChef Extraction Route
+    // 2. Dedicated LearnLogicify & CodeChef Extraction Routes
+    if (LearnLogicifyProblemExtractor.isLearnLogicify(targetDoc)) {
+      const learnLogicifyResult = LearnLogicifyProblemExtractor.extract(targetDoc);
+      if (learnLogicifyResult.status === 'success') {
+        return learnLogicifyResult;
+      }
+    }
+
     if (CodeChefProblemExtractor.isCodeChef(targetDoc)) {
       const codeChefResult = CodeChefProblemExtractor.extract(targetDoc);
       if (codeChefResult.status === 'success') {

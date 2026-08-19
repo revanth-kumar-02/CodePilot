@@ -18,6 +18,15 @@ export class PlatformRules {
       };
     }
 
+    if (raw.includes('learnlogicify') || raw.includes('logicify')) {
+      return {
+        platform: 'learnlogicify',
+        language: 'Java',
+        className: 'Main',
+        requiresMain: true,
+      };
+    }
+
     return {
       platform: 'generic',
       language: 'Java',

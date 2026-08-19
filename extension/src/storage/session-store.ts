@@ -27,6 +27,20 @@ export type ExecutionStatus =
   | 'PASS'
   | null;
 
+export type RepairStatus =
+  | 'NO_ERROR'
+  | 'ERROR_DETECTED'
+  | 'ANALYZING_ERROR'
+  | 'ERROR_ANALYZED'
+  | 'GENERATING_REPAIR'
+  | 'REPAIR_READY'
+  | 'APPLYING_REPAIR'
+  | 'REPAIR_VERIFIED'
+  | 'REPAIR_FAILED'
+  | 'REPAIR_LIMIT_REACHED'
+  | 'REPAIR_VALIDATION_FAILED'
+  | 'REPAIR_EDITOR_INSERTION_FAILED';
+
 export interface ProblemSessionDiagnosticsContext {
   lastExecutionStatus: ExecutionStatus;
   lastError: string | null;
@@ -34,6 +48,8 @@ export interface ProblemSessionDiagnosticsContext {
   errorClassification: string | null;
   repairAttempt: number;
   repairCode: string | null;
+  repairStatus?: RepairStatus;
+  repairRequestId?: string | null;
 }
 
 export interface ProblemSession {

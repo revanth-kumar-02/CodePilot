@@ -49,15 +49,16 @@ export class JavaStructureValidator {
     }
 
     // 3. Class Detection & Name Validation
-    const isLeetCode = rule.platform === 'leetcode';
+    const isLeetCode = rule.platform === 'leetcode' || rule.className === 'Solution';
     const classRegex = /\b(?:public\s+)?class\s+([A-Za-z0-9_$]+)/g;
     const matches = Array.from(codeWithoutStrings.matchAll(classRegex));
     const publicClassMatches = Array.from(codeWithoutStrings.matchAll(/\bpublic\s+class\s+([A-Za-z0-9_$]+)/g));
     const publicClassesCount = publicClassMatches.length;
 
-    let detectedClass = 'None';
-    if (matches.length > 0) {
-      detectedClass = matches[0][1];
+    const hasExpectedClass = matches.some((m) => m[1] === rule.className);
+    let detectedClass = matches.length > 0 ? matches[0][1] : 'None';
+    if (hasExpectedClass) {
+      detectedClass = rule.className;
     }
 
     let structurePass = true;
@@ -65,14 +66,14 @@ export class JavaStructureValidator {
     if (matches.length === 0) {
       structurePass = false;
       issues.push(`No class found. Required class '${rule.className}'.`);
-    } else if (detectedClass !== rule.className) {
+    } else if (!hasExpectedClass) {
       structurePass = false;
       issues.push(
-        `Invalid class name: expected 'class ${rule.className}', but detected 'class ${detectedClass}'.`
+        `Invalid class name: expected class '${rule.className}', but detected 'class ${detectedClass}'.`
       );
     } else if (!isLeetCode && publicClassesCount === 0) {
       structurePass = false;
-      issues.push(`No public class found. Required public class '${rule.className}'.`);
+      issues.push(`No public class found. Required public class 'Main'.`);
     } else if (publicClassesCount > 1) {
       structurePass = false;
       issues.push(

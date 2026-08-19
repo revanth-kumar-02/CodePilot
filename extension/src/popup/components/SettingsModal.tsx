@@ -289,6 +289,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             </div>
           )}
 
+          {/* Backend Server Endpoint */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: '#cbd5e1' }}>
+                Backend Server URL
+              </label>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => updateAndSave({ ...settings, serverUrl: 'http://localhost:3000' })}
+                  style={{
+                    background: (settings.serverUrl || '').includes('localhost') ? '#2563eb' : '#334155',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Localhost:3000
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateAndSave({ ...settings, serverUrl: 'https://codepilot-6hi8.onrender.com' })}
+                  style={{
+                    background: (settings.serverUrl || '').includes('onrender.com') ? '#2563eb' : '#334155',
+                    border: 'none',
+                    color: '#ffffff',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Render Production
+                </button>
+              </div>
+            </div>
+            <input
+              type="text"
+              placeholder="http://localhost:3000"
+              value={settings.serverUrl}
+              onChange={(e) => updateAndSave({ ...settings, serverUrl: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                background: '#1e293b',
+                color: '#f8fafc',
+                border: '1px solid #475569',
+                fontSize: '12px',
+                outline: 'none',
+                fontFamily: 'monospace',
+              }}
+            />
+            <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+              ⚡ Auto-failover ensures uninterrupted usage whether running backend locally or in cloud.
+            </span>
+          </div>
+
           {/* Status Alert */}
           {statusMessage && (
             <div

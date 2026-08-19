@@ -1,5 +1,11 @@
 export type SupportedAIProvider = 'groq' | 'openrouter' | 'openai' | 'gemini' | 'anthropic' | 'mock';
 
+export interface TypingSpeedConfig {
+  minDelay: number;
+  maxDelay: number;
+  enabled: boolean;
+}
+
 export interface UserSettings {
   aiProvider: SupportedAIProvider;
   apiKey: string;
@@ -7,7 +13,14 @@ export interface UserSettings {
   groqReasoningKey?: string;
   groqCodeKey?: string;
   serverUrl: string;
+  typingSpeed: TypingSpeedConfig;
 }
+
+export const DEFAULT_TYPING_SPEED: TypingSpeedConfig = {
+  minDelay: 40,
+  maxDelay: 70,
+  enabled: true,
+};
 
 export const DEFAULT_SETTINGS: UserSettings = {
   aiProvider: 'groq',
@@ -15,7 +28,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   groqAnalysisKey: '',
   groqReasoningKey: '',
   groqCodeKey: '',
-  serverUrl: 'https://codepilot-6hi8.onrender.com',
+  serverUrl: 'http://localhost:3000',
+  typingSpeed: DEFAULT_TYPING_SPEED,
 };
 
 export class SettingsStorage {

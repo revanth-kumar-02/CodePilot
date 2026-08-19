@@ -56,25 +56,36 @@ test('PlatformRules correctly detects platform class requirements', () => {
   assert.strictEqual(hackerrankRule.requiresMain, true);
 });
 
-test('JavaStructureValidator approves valid LeetCode Java code', () => {
-  const code = `
-public class Solution {
+test('JavaStructureValidator approves valid LeetCode Java code (non-public and public class Solution)', () => {
+  const nonPublicCode = `
+class Solution {
     public int solve(int[] nums) {
         return nums.length;
     }
 }
 `;
   const rule = PlatformRules.getRule('leetcode.com');
-  const diagnostics = JavaStructureValidator.validate(code, rule);
+  const diagnostics1 = JavaStructureValidator.validate(nonPublicCode, rule);
 
-  assert.strictEqual(diagnostics.finalStatus, 'PASS');
-  assert.strictEqual(diagnostics.detectedClass, 'Solution');
-  assert.strictEqual(diagnostics.braceValidation, 'PASS');
-  assert.strictEqual(diagnostics.commentValidation, 'PASS');
-  assert.strictEqual(diagnostics.issues.length, 0);
+  assert.strictEqual(diagnostics1.finalStatus, 'PASS');
+  assert.strictEqual(diagnostics1.detectedClass, 'Solution');
+  assert.strictEqual(diagnostics1.issues.length, 0);
+
+  const publicCode = `
+public class Solution {
+    public int solve(int[] nums) {
+        return nums.length;
+    }
+}
+`;
+  const diagnostics2 = JavaStructureValidator.validate(publicCode, rule);
+
+  assert.strictEqual(diagnostics2.finalStatus, 'PASS');
+  assert.strictEqual(diagnostics2.detectedClass, 'Solution');
+  assert.strictEqual(diagnostics2.issues.length, 0);
 });
 
-test('JavaStructureValidator rejects LeetCode code using public class Main', () => {
+test('JavaStructureValidator rejects LeetCode code using class Main or public class Main', () => {
   const code = `
 public class Main {
     public static void main(String[] args) {}
@@ -83,7 +94,7 @@ public class Main {
   const rule = PlatformRules.getRule('leetcode.com');
   const diagnostics = JavaStructureValidator.validate(code, rule);
 
-  assert.ok(diagnostics.issues.some((i) => i.includes("expected 'class Solution'")));
+  assert.strictEqual(diagnostics.finalStatus, 'FAIL');
 });
 
 test('JavaStructureValidator approves valid Generic platform Java code', () => {

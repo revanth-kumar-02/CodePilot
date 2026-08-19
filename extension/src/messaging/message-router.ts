@@ -17,6 +17,7 @@ import { LanguageRegistry } from '../shared/language-registry';
 import { SessionStore, ProblemSession } from '../storage/session-store';
 import { SettingsStorage } from '../storage/settings-storage';
 import { ProblemExtractionResult } from '../extraction/types';
+import { CodeValidator } from '../shared/code-validator';
 
 const logger = new Logger('MessageRouter');
 
@@ -25,6 +26,47 @@ export class MessageRouter {
 
   constructor(runtime: ExtensionRuntime) {
     this.runtime = runtime;
+  }
+
+  public static async fetchWithBackendFallback(
+    settingsServerUrl: string | undefined,
+    endpoint: string,
+    init: RequestInit
+  ): Promise<Response> {
+    const primaryBase = (settingsServerUrl || 'http://localhost:3000').trim().replace(/\/+$/, '');
+    const defaultLocalhost = 'http://localhost:3000';
+    const defaultRender = 'https://codepilot-6hi8.onrender.com';
+
+    const candidateBases: string[] = [primaryBase];
+    if (primaryBase.includes('localhost') || primaryBase.includes('127.0.0.1')) {
+      if (!candidateBases.includes(defaultRender)) {
+        candidateBases.push(defaultRender);
+      }
+    } else {
+      if (!candidateBases.includes(defaultLocalhost)) {
+        candidateBases.push(defaultLocalhost);
+      }
+    }
+
+    let lastError: any = null;
+
+    for (let i = 0; i < candidateBases.length; i++) {
+      const base = candidateBases[i];
+      const url = `${base}${endpoint}`;
+      try {
+        logger.info(`Sending AI request to: ${url}`);
+        const response = await fetch(url, init);
+        return response;
+      } catch (err) {
+        lastError = err;
+        logger.warn(`Fetch to backend failed (${url}): ${err instanceof Error ? err.message : String(err)}`);
+        if (i < candidateBases.length - 1) {
+          logger.info(`Attempting seamless fallback to next backend endpoint: ${candidateBases[i + 1]}${endpoint}`);
+        }
+      }
+    }
+
+    throw lastError || new Error('All backend endpoints failed.');
   }
 
   public async syncSessionToTabState(tabId: number): Promise<ProblemSession | null> {
@@ -467,15 +509,14 @@ export class MessageRouter {
             });
 
             const settings = await SettingsStorage.getSettings();
-            const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
             if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
-            
+
             const analysisKey = settings.groqAnalysisKey?.trim() || settings.apiKey?.trim();
             if (analysisKey) headers['X-AI-Analysis-Key'] = analysisKey;
             if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
 
-            fetch(`${baseUrl}/api/ai/analyze`, {
+            MessageRouter.fetchWithBackendFallback(settings.serverUrl, '/api/ai/analyze', {
               method: 'POST',
               headers,
               body: JSON.stringify({ problem: problemPayload }),
@@ -581,7 +622,6 @@ export class MessageRouter {
           });
 
           const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
 
@@ -590,7 +630,7 @@ export class MessageRouter {
           if (settings.groqAnalysisKey?.trim()) headers['X-AI-Analysis-Key'] = settings.groqAnalysisKey.trim();
           if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
 
-          fetch(`${baseUrl}/api/ai/reason`, {
+          MessageRouter.fetchWithBackendFallback(settings.serverUrl, '/api/ai/reason', {
             method: 'POST',
             headers,
             body: JSON.stringify({ problem: extractedProblem }),
@@ -712,7 +752,6 @@ export class MessageRouter {
           await this.syncSessionToTabState(tabId);
 
           const codeGenSettings = await SettingsStorage.getSettings();
-          const codeGenBaseUrl = codeGenSettings.serverUrl || 'https://codepilot-6hi8.onrender.com';
           const codeGenHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
           if (codeGenSettings.aiProvider) codeGenHeaders['X-AI-Provider'] = codeGenSettings.aiProvider;
 
@@ -720,7 +759,7 @@ export class MessageRouter {
           if (codeKey) codeGenHeaders['X-AI-Code-Key'] = codeKey;
           if (codeGenSettings.apiKey?.trim()) codeGenHeaders['X-AI-Api-Key'] = codeGenSettings.apiKey.trim();
 
-          fetch(`${codeGenBaseUrl}/api/ai/generate-code`, {
+          MessageRouter.fetchWithBackendFallback(codeGenSettings.serverUrl, '/api/ai/generate-code', {
             method: 'POST',
             headers: codeGenHeaders,
             body: JSON.stringify({
@@ -885,16 +924,22 @@ export class MessageRouter {
           if (activeTab?.tabId) {
             const tabId = activeTab.tabId;
             const payload = msg.payload as any;
+            const status = payload?.status || null;
+            const errorMessage = payload?.errorMessage || null;
+            const testOutput = payload?.testOutput || null;
+
             const session = await SessionStore.getSession(tabId);
             if (session) {
+              const isPassed = status === 'ACCEPTED' || status === 'PASS';
               await SessionStore.updateSession(tabId, {
                 diagnosticsContext: {
-                  lastExecutionStatus: payload?.status || null,
-                  lastError: payload?.errorMessage || null,
-                  lastTestOutput: payload?.testOutput || null,
-                  errorClassification: payload?.status === 'ACCEPTED' ? null : session.diagnosticsContext?.errorClassification || null,
+                  lastExecutionStatus: status,
+                  lastError: isPassed ? null : errorMessage,
+                  lastTestOutput: isPassed ? null : testOutput,
+                  errorClassification: isPassed ? null : session.diagnosticsContext?.errorClassification || null,
                   repairAttempt: session.diagnosticsContext?.repairAttempt || 0,
-                  repairCode: session.diagnosticsContext?.repairCode || null,
+                  repairCode: isPassed ? null : session.diagnosticsContext?.repairCode || null,
+                  repairStatus: isPassed ? 'NO_ERROR' : 'ERROR_DETECTED',
                 },
               });
               await this.syncSessionToTabState(tabId);
@@ -913,51 +958,98 @@ export class MessageRouter {
 
           const tabId = activeTab.tabId;
           const session = await SessionStore.getSession(tabId);
+
+          // Deduplication: prevent duplicate parallel requests
+          if (session?.diagnosticsContext?.repairStatus === 'ANALYZING_ERROR') {
+            logger.info('Ignoring duplicate REQUEST_ERROR_ANALYSIS request.');
+            sendResponse({ status: 'in_progress', message: 'Error analysis already running' });
+            return true;
+          }
+
           const problem = session?.problem || activeTab.problemExtraction?.result?.problem;
           const currentCode = session?.code?.source || '';
           const errorMessage = session?.diagnosticsContext?.lastError || msg.payload?.errorMessage || 'Execution Error';
           const testOutput = session?.diagnosticsContext?.lastTestOutput || msg.payload?.testOutput || null;
+          const plan = session?.solutionPlan || activeTab.reasoning?.plan || null;
+          const analysis = session?.aiAnalysis || activeTab.aiAnalysis?.analysis || null;
+          const platform = session?.platform || 'leetcode';
+          const language = session?.code?.language || 'java';
+          const version = session?.code?.version || null;
 
           if (!problem) {
             sendResponse({ status: 'failed', error: 'No problem context available for analysis' });
             return false;
           }
 
-          const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
+          if (session) {
+            await SessionStore.updateSession(tabId, {
+              diagnosticsContext: {
+                ...session.diagnosticsContext!,
+                repairStatus: 'ANALYZING_ERROR',
+              },
+            });
+            await this.syncSessionToTabState(tabId);
+          }
 
-          fetch(`${baseUrl}/api/ai/analyze-error`, {
+          const settings = await SettingsStorage.getSettings();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
+          if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
+
+          MessageRouter.fetchWithBackendFallback(settings.serverUrl, '/api/ai/analyze-error', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-AI-Provider': settings.aiProvider,
-              'X-AI-Api-Key': settings.apiKey,
-            },
+            headers,
             body: JSON.stringify({
               problem,
               currentCode,
               errorMessage,
               testOutput,
+              plan,
+              analysis,
+              platform,
+              language,
+              version,
             }),
           })
             .then(async (res) => {
               const data = await res.json();
+              const freshSession = await SessionStore.getSession(tabId);
               if (res.ok && data.status === 'success' && data.analysis) {
-                if (session) {
+                if (freshSession) {
                   await SessionStore.updateSession(tabId, {
                     diagnosticsContext: {
-                      ...session.diagnosticsContext!,
+                      ...freshSession.diagnosticsContext!,
                       errorClassification: data.analysis.classification,
+                      repairStatus: 'ERROR_ANALYZED',
                     },
                   });
                   await this.syncSessionToTabState(tabId);
                 }
                 sendResponse({ status: 'success', analysis: data.analysis });
               } else {
+                if (freshSession) {
+                  await SessionStore.updateSession(tabId, {
+                    diagnosticsContext: {
+                      ...freshSession.diagnosticsContext!,
+                      repairStatus: 'ERROR_DETECTED',
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
                 sendResponse({ status: 'failed', error: data.error?.message || 'Error analysis failed' });
               }
             })
-            .catch((err) => {
+            .catch(async (err) => {
+              const freshSession = await SessionStore.getSession(tabId);
+              if (freshSession) {
+                await SessionStore.updateSession(tabId, {
+                  diagnosticsContext: {
+                    ...freshSession.diagnosticsContext!,
+                    repairStatus: 'ERROR_DETECTED',
+                  },
+                });
+                await this.syncSessionToTabState(tabId);
+              }
               sendResponse({ status: 'failed', error: err instanceof Error ? err.message : String(err) });
             });
 
@@ -975,15 +1067,35 @@ export class MessageRouter {
           const session = await SessionStore.getSession(tabId);
           const currentAttempt = session?.diagnosticsContext?.repairAttempt || 0;
 
+          // Attempt Limit Check (Max 3 repair attempts per ProblemSession)
           if (currentAttempt >= 3) {
-            sendResponse({ status: 'failed', error: 'Repair limit reached.' });
+            if (session) {
+              await SessionStore.updateSession(tabId, {
+                diagnosticsContext: {
+                  ...session.diagnosticsContext!,
+                  repairStatus: 'REPAIR_LIMIT_REACHED',
+                },
+              });
+              await this.syncSessionToTabState(tabId);
+            }
+            sendResponse({ status: 'failed', error: 'REPAIR_LIMIT_REACHED' });
             return false;
+          }
+
+          // Deduplication check
+          if (session?.diagnosticsContext?.repairStatus === 'GENERATING_REPAIR') {
+            logger.info('Ignoring duplicate REQUEST_CODE_REPAIR request.');
+            sendResponse({ status: 'in_progress', message: 'Code repair generation already running' });
+            return true;
           }
 
           const problem = session?.problem || activeTab.problemExtraction?.result?.problem;
           const plan = session?.solutionPlan || activeTab.reasoning?.plan || null;
+          const analysis = session?.aiAnalysis || activeTab.aiAnalysis?.analysis || null;
           const currentCode = session?.code?.source || '';
           const language = session?.code?.language || 'java';
+          const platform = session?.platform || 'leetcode';
+          const version = session?.code?.version || null;
           const errorMessage = session?.diagnosticsContext?.lastError || 'Execution Error';
           const testOutput = session?.diagnosticsContext?.lastTestOutput || null;
           const classification = session?.diagnosticsContext?.errorClassification || 'Compilation Error';
@@ -993,44 +1105,94 @@ export class MessageRouter {
             return false;
           }
 
-          const settings = await SettingsStorage.getSettings();
-          const baseUrl = settings.serverUrl || 'https://codepilot-6hi8.onrender.com';
+          const requestId = `req_repair_${tabId}_${currentAttempt}_${Date.now()}`;
+          if (session) {
+            await SessionStore.updateSession(tabId, {
+              diagnosticsContext: {
+                ...session.diagnosticsContext!,
+                repairStatus: 'GENERATING_REPAIR',
+                repairRequestId: requestId,
+              },
+            });
+            await this.syncSessionToTabState(tabId);
+          }
 
-          fetch(`${baseUrl}/api/ai/repair-code`, {
+          const settings = await SettingsStorage.getSettings();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (settings.aiProvider) headers['X-AI-Provider'] = settings.aiProvider;
+          if (settings.apiKey?.trim()) headers['X-AI-Api-Key'] = settings.apiKey.trim();
+
+          MessageRouter.fetchWithBackendFallback(settings.serverUrl, '/api/ai/repair-code', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-AI-Provider': settings.aiProvider,
-              'X-AI-Api-Key': settings.apiKey,
-            },
+            headers,
             body: JSON.stringify({
               problem,
               plan,
+              analysis,
               currentCode,
               language,
               errorMessage,
               testOutput,
               classification,
+              platform,
+              version,
             }),
           })
             .then(async (res) => {
               const data = await res.json();
+              const freshSession = await SessionStore.getSession(tabId);
               if (res.ok && data.status === 'success' && data.repairedCode) {
-                if (session) {
+                // Section 5: Repair Validation before setting READY
+                const validation = CodeValidator.parseAndValidate(data.repairedCode, language, platform);
+                if (!validation.valid) {
+                  if (freshSession) {
+                    await SessionStore.updateSession(tabId, {
+                      diagnosticsContext: {
+                        ...freshSession.diagnosticsContext!,
+                        repairStatus: 'REPAIR_VALIDATION_FAILED',
+                      },
+                    });
+                    await this.syncSessionToTabState(tabId);
+                  }
+                  sendResponse({ status: 'failed', error: `REPAIR_VALIDATION_FAILED: ${validation.issues.join('; ')}` });
+                  return;
+                }
+
+                if (freshSession) {
                   await SessionStore.updateSession(tabId, {
                     diagnosticsContext: {
-                      ...session.diagnosticsContext!,
-                      repairCode: data.repairedCode,
+                      ...freshSession.diagnosticsContext!,
+                      repairCode: validation.code,
+                      repairStatus: 'REPAIR_READY',
                     },
                   });
                   await this.syncSessionToTabState(tabId);
                 }
-                sendResponse({ status: 'success', repairedCode: data.repairedCode });
+                sendResponse({ status: 'success', repairedCode: validation.code });
               } else {
+                if (freshSession) {
+                  await SessionStore.updateSession(tabId, {
+                    diagnosticsContext: {
+                      ...freshSession.diagnosticsContext!,
+                      repairStatus: 'REPAIR_FAILED',
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
                 sendResponse({ status: 'failed', error: data.error?.message || 'Code repair generation failed' });
               }
             })
-            .catch((err) => {
+            .catch(async (err) => {
+              const freshSession = await SessionStore.getSession(tabId);
+              if (freshSession) {
+                await SessionStore.updateSession(tabId, {
+                  diagnosticsContext: {
+                    ...freshSession.diagnosticsContext!,
+                    repairStatus: 'REPAIR_FAILED',
+                  },
+                });
+                await this.syncSessionToTabState(tabId);
+              }
               sendResponse({ status: 'failed', error: err instanceof Error ? err.message : String(err) });
             });
 
@@ -1046,40 +1208,87 @@ export class MessageRouter {
 
           const tabId = activeTab.tabId;
           const session = await SessionStore.getSession(tabId);
-          const repairedCode = msg.payload?.code || session?.diagnosticsContext?.repairCode;
+          const rawCode = msg.payload?.code || session?.diagnosticsContext?.repairCode;
 
-          if (!repairedCode) {
+          if (!rawCode) {
             sendResponse({ success: false, message: 'No repair code available to apply' });
             return false;
           }
 
+          // Section 5 Validation
+          const validation = CodeValidator.parseAndValidate(
+            rawCode,
+            session?.code?.language || 'java',
+            session?.platform || 'leetcode'
+          );
+
+          if (!validation.valid) {
+            if (session) {
+              await SessionStore.updateSession(tabId, {
+                diagnosticsContext: {
+                  ...session.diagnosticsContext!,
+                  repairStatus: 'REPAIR_VALIDATION_FAILED',
+                },
+              });
+              await this.syncSessionToTabState(tabId);
+            }
+            sendResponse({
+              success: false,
+              message: `REPAIR_VALIDATION_FAILED: ${validation.issues.join('; ')}`,
+            });
+            return false;
+          }
+
+          if (session) {
+            await SessionStore.updateSession(tabId, {
+              diagnosticsContext: {
+                ...session.diagnosticsContext!,
+                repairStatus: 'APPLYING_REPAIR',
+              },
+            });
+            await this.syncSessionToTabState(tabId);
+          }
+
           chrome.tabs.sendMessage(
             tabId,
-            { type: 'INSERT_CODE_TO_EDITOR', code: repairedCode, mode: 'instant' },
+            { type: 'INSERT_CODE_TO_EDITOR', code: validation.code, mode: 'instant' },
             async (response) => {
+              const freshSession = await SessionStore.getSession(tabId);
               if (chrome.runtime.lastError || !response || !response.success) {
-                sendResponse({
-                  success: false,
-                  message: response?.message || 'Editor code insertion failed.',
-                });
-              } else {
-                if (session) {
-                  const newAttempt = (session.diagnosticsContext?.repairAttempt || 0) + 1;
+                if (freshSession) {
                   await SessionStore.updateSession(tabId, {
-                    code: {
-                      ...session.code,
-                      source: repairedCode,
-                      status: 'ready',
-                    },
                     diagnosticsContext: {
-                      ...session.diagnosticsContext!,
-                      repairAttempt: newAttempt,
-                      repairCode: null,
+                      ...freshSession.diagnosticsContext!,
+                      repairStatus: 'REPAIR_EDITOR_INSERTION_FAILED',
                     },
                   });
                   await this.syncSessionToTabState(tabId);
                 }
-                sendResponse({ success: true, message: '✓ Repair applied' });
+                sendResponse({
+                  success: false,
+                  message: response?.message || 'REPAIR_EDITOR_INSERTION_FAILED',
+                });
+              } else {
+                // Section 7 & 11: Editor readback succeeded, update ProblemSession
+                if (freshSession) {
+                  const newAttempt = (freshSession.diagnosticsContext?.repairAttempt || 0) + 1;
+                  const limitReached = newAttempt >= 3;
+                  await SessionStore.updateSession(tabId, {
+                    code: {
+                      ...freshSession.code,
+                      source: validation.code,
+                      status: 'ready',
+                    },
+                    diagnosticsContext: {
+                      ...freshSession.diagnosticsContext!,
+                      repairAttempt: newAttempt,
+                      repairCode: null,
+                      repairStatus: limitReached ? 'REPAIR_LIMIT_REACHED' : 'REPAIR_VERIFIED',
+                    },
+                  });
+                  await this.syncSessionToTabState(tabId);
+                }
+                sendResponse({ success: true, message: '✓ Repair applied and verified' });
               }
             }
           );

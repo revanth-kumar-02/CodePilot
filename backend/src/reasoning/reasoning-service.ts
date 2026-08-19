@@ -25,7 +25,11 @@ export class ReasoningService {
     }
   }
 
-  public async reasonProblem(rawProblem: unknown, overrideApiKeyOrProvider?: string | AIProvider): Promise<ReasoningExecutionResult> {
+  public async reasonProblem(
+    rawProblem: unknown,
+    overrideApiKeyOrProvider?: string | AIProvider,
+    overrideProviderName?: string
+  ): Promise<ReasoningExecutionResult> {
     const startTime = performance.now();
     const requestId = `req_${++this.currentRequestId}_${Date.now()}`;
     const capturedRequestId = this.currentRequestId;
@@ -76,7 +80,7 @@ export class ReasoningService {
           plan = await this.legacyProvider.reasonProblem(problem, isRecoveryAttempt);
         } else {
           const apiKey = typeof overrideApiKeyOrProvider === 'string' ? overrideApiKeyOrProvider : undefined;
-          plan = await (this.router || new AIProviderRouter()).generateSolutionPlan(problem, isRecoveryAttempt, apiKey);
+          plan = await (this.router || new AIProviderRouter()).generateSolutionPlan(problem, isRecoveryAttempt, apiKey, overrideProviderName);
         }
 
         const validation = ConsistencyChecker.check(plan, problem);

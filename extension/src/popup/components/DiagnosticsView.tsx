@@ -239,7 +239,26 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
 
             {repairedCode && (
               <div style={{ marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
-                <div className="section-label" style={{ marginBottom: '4px' }}>Repair Preview</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span className="section-label" style={{ color: 'var(--accent-green)', fontWeight: 700 }}>
+                    REPAIR READY
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Preview Mode
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>Problem: </span>
+                  {session?.problem?.title || extractionResult?.problem?.title || 'Current Problem'}
+                </div>
+
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>Error: </span>
+                  {analysisResult || diagContext?.errorClassification || executionStatus || 'Execution Failure'}
+                </div>
+
+                <div className="section-label" style={{ marginBottom: '4px' }}>Repaired Code</div>
                 <pre
                   style={{
                     backgroundColor: '#0d1117',
@@ -261,14 +280,15 @@ export const DiagnosticsView: React.FC<DiagnosticsViewProps> = ({
                   <button
                     className="refresh-btn"
                     onClick={handleApplyRepair}
-                    disabled={applyingRepair}
-                    style={{ flex: 1, backgroundColor: 'var(--accent-green)', color: '#fff' }}
+                    disabled={applyingRepair || analyzing || generatingRepair}
+                    style={{ flex: 1, backgroundColor: 'var(--accent-green)', color: '#fff', fontWeight: 600 }}
                   >
                     {applyingRepair ? 'Applying...' : 'Apply Repair'}
                   </button>
                   <button
                     className="refresh-btn"
                     onClick={() => setRepairedCode(null)}
+                    disabled={applyingRepair}
                     style={{ backgroundColor: 'var(--bg-tertiary)' }}
                   >
                     Cancel

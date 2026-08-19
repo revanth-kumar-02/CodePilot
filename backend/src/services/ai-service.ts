@@ -14,7 +14,11 @@ export class AIService {
     }
   }
 
-  public async analyzeProblem(rawProblem: unknown, overrideApiKeyOrProvider?: string | AIProvider): Promise<ProblemAnalysis> {
+  public async analyzeProblem(
+    rawProblem: unknown,
+    overrideApiKeyOrProvider?: string | AIProvider,
+    overrideProviderName?: string
+  ): Promise<ProblemAnalysis> {
     const startTime = performance.now();
     console.log('[CodePilot][AI] Analysis request started');
 
@@ -48,7 +52,7 @@ export class AIService {
         result = await this.legacyProvider.analyzeProblem(problem);
       } else {
         const apiKey = typeof overrideApiKeyOrProvider === 'string' ? overrideApiKeyOrProvider : undefined;
-        result = await (this.router || new AIProviderRouter()).analyzeProblem(problem, apiKey);
+        result = await (this.router || new AIProviderRouter()).analyzeProblem(problem, apiKey, overrideProviderName);
       }
 
       const durationMs = Math.round(performance.now() - startTime);

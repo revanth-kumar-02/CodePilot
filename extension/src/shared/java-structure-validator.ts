@@ -38,29 +38,44 @@ export class JavaStructureValidator {
       issues.push(`Brace nesting invalid: unbalanced braces (depth at end: ${depth}).`);
     }
 
-    // 3. Public Class Detection & Name Validation
-    const publicClassRegex = /\bpublic\s+class\s+([A-Za-z0-9_$]+)/g;
-    const publicMatches = Array.from(codeWithoutStrings.matchAll(publicClassRegex));
-    const publicClassesCount = publicMatches.length;
-    const detectedClass = publicClassesCount > 0 ? publicMatches[0][1] : 'None';
+    // 3. Class Detection & Name Validation
+    const isLeetCode = expectedClass === 'Solution';
+    const classRegex = /\b(?:public\s+)?class\s+([A-Za-z0-9_$]+)/g;
+    const matches = Array.from(codeWithoutStrings.matchAll(classRegex));
+    const publicClassMatches = Array.from(codeWithoutStrings.matchAll(/\bpublic\s+class\s+([A-Za-z0-9_$]+)/g));
+    const publicClassesCount = publicClassMatches.length;
 
-    if (publicClassesCount === 0) {
-      issues.push(`No public class found. Required public class '${expectedClass}'.`);
-    } else if (publicClassesCount > 1) {
-      issues.push(`Multiple public classes detected (${publicClassesCount}). Exactly one public class '${expectedClass}' is required.`);
-    } else if (detectedClass !== expectedClass) {
-      issues.push(`Invalid public class name: expected 'public class ${expectedClass}', but detected 'public class ${detectedClass}'.`);
+    const hasExpectedClass = matches.some((m) => m[1] === expectedClass);
+    let detectedClass = matches.length > 0 ? matches[0][1] : 'None';
+    if (hasExpectedClass) {
+      detectedClass = expectedClass;
     }
 
-    // 4. Duplicate Class Declarations
+    if (matches.length === 0) {
+      issues.push(`No class found. Required class '${expectedClass}'.`);
+    } else if (!hasExpectedClass) {
+      issues.push(`Invalid class name: expected class '${expectedClass}', but detected 'class ${detectedClass}'.`);
+    } else if (!isLeetCode && publicClassesCount === 0) {
+      issues.push(`No public class found. Required public class 'Main'.`);
+    } else if (publicClassesCount > 1) {
+      issues.push(`Multiple public classes detected (${publicClassesCount}). Exactly one primary class '${expectedClass}' is required.`);
+    }
+
+    // 4. Platform-Specific Duplicate / Conflicting Class Checks
+    if (isLeetCode) {
+      if (/\bclass\s+Main\b|\bpublic\s+class\s+Main\b|\bpublic\s+class\s+Test\b/.test(codeWithoutStrings)) {
+        issues.push("LeetCode Java solutions must NOT contain 'Main' or 'Test' class declarations.");
+      }
+    }
+
     const mainMatches = Array.from(codeWithoutStrings.matchAll(/\bpublic\s+class\s+Main\b/g));
     if (mainMatches.length > 1) {
       issues.push(`Duplicate 'public class Main' declarations detected (${mainMatches.length}).`);
     }
 
-    const solutionMatches = Array.from(codeWithoutStrings.matchAll(/\bpublic\s+class\s+Solution\b/g));
+    const solutionMatches = Array.from(codeWithoutStrings.matchAll(/\b(?:public\s+)?class\s+Solution\b/g));
     if (solutionMatches.length > 1) {
-      issues.push(`Duplicate 'public class Solution' declarations detected (${solutionMatches.length}).`);
+      issues.push(`Duplicate 'Solution' class declarations detected (${solutionMatches.length}).`);
     }
 
     return {

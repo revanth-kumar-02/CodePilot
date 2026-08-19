@@ -3,7 +3,7 @@ import { AIService } from '../services/ai-service.js';
 import { ReasoningService } from '../reasoning/reasoning-service.js';
 import { CodeGeneratorService } from '../services/code-generator-service.js';
 import { CodeRepairService } from '../services/code-repair-service.js';
-import { AIError } from '../ai/index.js';
+import { AIError, ProviderFactory } from '../ai/index.js';
 
 const router = Router();
 const aiService = new AIService();
@@ -34,6 +34,16 @@ function resolveApiKey(req: Request, keyType: 'analysis' | 'reasoning' | 'code')
   }
 }
 
+function resolveProvider(req: Request): string | undefined {
+  const getClean = (val: any): string | undefined => {
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim().toLowerCase();
+    }
+    return undefined;
+  };
+  return getClean(req.headers['x-ai-provider']) || getClean(req.body?.aiProvider) || getClean(req.body?.provider);
+}
+
 router.post('/solve-pipeline', async (req: Request, res: Response) => {
   try {
     const problemPayload = req.body?.problem || req.body;
@@ -43,12 +53,13 @@ router.post('/solve-pipeline', async (req: Request, res: Response) => {
     const analysisKey = resolveApiKey(req, 'analysis');
     const reasoningKey = resolveApiKey(req, 'reasoning');
     const codeKey = resolveApiKey(req, 'code');
+    const providerName = resolveProvider(req);
 
     // Agent 1: Analysis Agent
-    const analysis = await aiService.analyzeProblem(problemPayload, analysisKey);
+    const analysis = await aiService.analyzeProblem(problemPayload, analysisKey, providerName);
 
     // Agent 2: Solution Reasoning Agent
-    const { plan, validation } = await reasoningService.reasonProblem(problemPayload, reasoningKey);
+    const { plan, validation } = await reasoningService.reasonProblem(problemPayload, reasoningKey, providerName);
 
     // Agent 3: Code Generation Agent
     const { generatedCode, durationMs } = await codeGeneratorService.generateCode(
@@ -56,7 +67,8 @@ router.post('/solve-pipeline', async (req: Request, res: Response) => {
       plan,
       targetLanguage,
       targetVersion,
-      codeKey
+      codeKey,
+      providerName
     );
 
     return res.status(200).json({
@@ -96,7 +108,8 @@ router.post('/analyze', async (req: Request, res: Response) => {
   try {
     const problemPayload = req.body?.problem || req.body;
     const apiKey = resolveApiKey(req, 'analysis');
-    const analysis = await aiService.analyzeProblem(problemPayload, apiKey);
+    const providerName = resolveProvider(req);
+    const analysis = await aiService.analyzeProblem(problemPayload, apiKey, providerName);
     return res.status(200).json({
       status: 'success',
       analysis,
@@ -128,7 +141,8 @@ router.post('/reason', async (req: Request, res: Response) => {
   try {
     const problemPayload = req.body?.problem || req.body;
     const apiKey = resolveApiKey(req, 'reasoning');
-    const { plan, validation, reasoningDurationMs } = await reasoningService.reasonProblem(problemPayload, apiKey);
+    const providerName = resolveProvider(req);
+    const { plan, validation, reasoningDurationMs } = await reasoningService.reasonProblem(problemPayload, apiKey, providerName);
     return res.status(200).json({
       status: 'success',
       plan,
@@ -163,13 +177,15 @@ router.post('/generate-code', async (req: Request, res: Response) => {
     const targetLanguage = req.body?.targetLanguage;
     const targetVersion = req.body?.targetVersion;
     const apiKey = resolveApiKey(req, 'code');
+    const providerName = resolveProvider(req);
 
     const { generatedCode, durationMs } = await codeGeneratorService.generateCode(
       problemPayload,
       planPayload,
       targetLanguage,
       targetVersion,
-      apiKey
+      apiKey,
+      providerName
     );
 
     return res.status(200).json({
@@ -200,15 +216,22 @@ router.post('/generate-code', async (req: Request, res: Response) => {
 
 router.post('/analyze-error', async (req: Request, res: Response) => {
   try {
-    const { problem, currentCode, errorMessage, testOutput } = req.body;
+    const { problem, currentCode, errorMessage, testOutput, plan, analysis, platform, language, version } = req.body;
     const apiKey = resolveApiKey(req, 'analysis');
+    const providerName = resolveProvider(req);
+    const overrideProvider = (apiKey || providerName) ? ProviderFactory.getProvider(providerName, apiKey, 'analysis') : undefined;
 
     const result = await codeRepairService.analyzeError(
       problem,
       currentCode,
       errorMessage,
       testOutput,
-      undefined
+      overrideProvider,
+      plan,
+      analysis,
+      platform,
+      language,
+      version
     );
 
     return res.status(200).json({
@@ -238,18 +261,23 @@ router.post('/analyze-error', async (req: Request, res: Response) => {
 
 router.post('/repair-code', async (req: Request, res: Response) => {
   try {
-    const { problem, plan, currentCode, language, errorMessage, testOutput, classification } = req.body;
+    const { problem, plan, analysis, currentCode, language, errorMessage, testOutput, classification, platform, version } = req.body;
     const apiKey = resolveApiKey(req, 'code');
+    const providerName = resolveProvider(req);
+    const overrideProvider = (apiKey || providerName) ? ProviderFactory.getProvider(providerName, apiKey, 'code') : undefined;
 
     const result = await codeRepairService.generateRepair(
       problem,
       plan,
+      analysis,
       currentCode,
       language,
       errorMessage,
       testOutput,
       classification,
-      undefined
+      platform,
+      version,
+      overrideProvider
     );
 
     return res.status(200).json({

@@ -26,5 +26,20 @@
       "all_frames": true
     }
   ],
-  "permissions": ["activeTab", "tabs", "scripting", "storage"]
+  "permissions": ["activeTab", "tabs", "scripting", "storage"],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://*.leetcode.com/*",
+    "https://www.codechef.com/*",
+    "https://*.codechef.com/*",
+    "https://www.hackerrank.com/*",
+    "https://*.hackerrank.com/*",
+    "https://codepilot-6hi8.onrender.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-bridge.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

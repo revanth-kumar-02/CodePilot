@@ -1,4 +1,4 @@
-import { EditorAdapter, EditorType, InsertionResult, MonacoDiagnostics } from './types';
+import { EditorAdapter, EditorType, InsertionResult, MonacoDiagnostics, CompactInsertionDiagnostics, formatCompactDiagnostics } from './types';
 import { ensurePageBridgeInjected } from '../bridge-injector';
 
 export class MonacoAdapter implements EditorAdapter {
@@ -157,10 +157,42 @@ export class MonacoAdapter implements EditorAdapter {
   ): Promise<InsertionResult> {
     ensurePageBridgeInjected();
 
-    // 1. Handshake: PING Page Bridge
-    const pingRes = await this.sendBridgeMessage('CODEPILOT_MONACO_PING', undefined, 2000);
+    const currentUrl = typeof window !== 'undefined' ? window.location.href : 'N/A';
+    const isLeetCode = currentUrl.includes('leetcode');
+    const platformName = isLeetCode ? 'LeetCode' : currentUrl.includes('codechef') ? 'CodeChef' : 'Generic';
 
-    if (!pingRes || !pingRes.bridgeConnected) {
+    // 1. Reactive Handshake Polling (poll PING up to 2.5s for async Monaco ready state)
+    let pingRes: any = null;
+    const startTime = Date.now();
+    const maxWaitMs = 2500;
+
+    while (Date.now() - startTime < maxWaitMs) {
+      pingRes = await this.sendBridgeMessage('CODEPILOT_MONACO_PING', undefined, 1000);
+      if (pingRes && pingRes.bridgeConnected && pingRes.safeMetadata?.modelFound) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const bridgeAvailable = Boolean(pingRes && pingRes.bridgeConnected);
+
+    if (!bridgeAvailable) {
+      const compactDiagnostics: CompactInsertionDiagnostics = {
+        platform: platformName,
+        url: currentUrl,
+        contentScript: 'LOADED',
+        extensionContext: typeof chrome !== 'undefined' && chrome.runtime?.id ? 'AVAILABLE' : 'FAILED',
+        editorDetector: 'FOUND',
+        editorType: 'Monaco',
+        editorBridge: 'UNAVAILABLE',
+        editorAdapter: this.name,
+        insertionRequest: 'RECEIVED',
+        write: 'FAIL',
+        readback: 'FAIL',
+        verification: 'FAIL',
+        final: 'FAILED',
+      };
+
       return {
         success: false,
         editorType: 'monaco',
@@ -178,64 +210,46 @@ export class MonacoAdapter implements EditorAdapter {
           actualLength: 0,
           verification: 'FAIL',
         },
+        compactDiagnostics,
+        compactDiagnosticsFormatted: formatCompactDiagnostics(compactDiagnostics),
       };
     }
 
     const metadata = pingRes.safeMetadata || {};
 
-    if (!metadata.runtimeFound) {
-      return {
-        success: false,
-        editorType: 'monaco',
-        errorCode: 'EDITOR_NOT_FOUND',
-        message: 'MONACO_NOT_FOUND: Monaco runtime not found in page context.',
-        diagnostics: {
-          bridge: 'CONNECTED',
-          monacoRuntime: 'NOT FOUND',
-          activeEditor: 'NOT FOUND',
-          model: 'NOT FOUND',
-          modelUri: metadata.modelUri || 'N/A',
-          write: 'FAIL',
-          readback: 'FAIL',
-          expectedLength: code.length,
-          actualLength: 0,
-          verification: 'FAIL',
-        },
-      };
-    }
+    if (!metadata.runtimeFound || !metadata.editorFound || !metadata.modelFound) {
+      const errorCode = !metadata.runtimeFound
+        ? 'EDITOR_NOT_FOUND'
+        : !metadata.editorFound
+        ? 'EDITOR_NOT_ACCESSIBLE'
+        : 'MONACO_MODEL_NOT_FOUND';
 
-    if (!metadata.editorFound) {
-      return {
-        success: false,
-        editorType: 'monaco',
-        errorCode: 'EDITOR_NOT_ACCESSIBLE',
-        message: 'ACTIVE_EDITOR_NOT_FOUND: No visible/active Monaco editor found.',
-        diagnostics: {
-          bridge: 'CONNECTED',
-          monacoRuntime: 'FOUND',
-          activeEditor: 'NOT FOUND',
-          model: 'NOT FOUND',
-          modelUri: metadata.modelUri || 'N/A',
-          write: 'FAIL',
-          readback: 'FAIL',
-          expectedLength: code.length,
-          actualLength: 0,
-          verification: 'FAIL',
-        },
+      const compactDiagnostics: CompactInsertionDiagnostics = {
+        platform: platformName,
+        url: currentUrl,
+        contentScript: 'LOADED',
+        extensionContext: typeof chrome !== 'undefined' && chrome.runtime?.id ? 'AVAILABLE' : 'FAILED',
+        editorDetector: metadata.runtimeFound ? 'FOUND' : 'NOT_FOUND',
+        editorType: 'Monaco',
+        editorBridge: 'AVAILABLE',
+        editorAdapter: this.name,
+        insertionRequest: 'RECEIVED',
+        write: 'FAIL',
+        readback: 'FAIL',
+        verification: 'FAIL',
+        final: 'FAILED',
       };
-    }
 
-    if (!metadata.modelFound) {
       return {
         success: false,
         editorType: 'monaco',
-        errorCode: 'MONACO_MODEL_NOT_FOUND',
-        message: 'MODEL_NOT_FOUND: Could not locate active Monaco editor model.',
+        errorCode,
+        message: `${errorCode}: Monaco editor runtime or model incomplete.`,
         diagnostics: {
           bridge: 'CONNECTED',
-          monacoRuntime: 'FOUND',
-          activeEditor: 'FOUND',
-          model: 'NOT FOUND',
+          monacoRuntime: metadata.runtimeFound ? 'FOUND' : 'NOT FOUND',
+          activeEditor: metadata.editorFound ? 'FOUND' : 'NOT FOUND',
+          model: metadata.modelFound ? 'FOUND' : 'NOT FOUND',
           modelUri: metadata.modelUri || 'N/A',
           write: 'FAIL',
           readback: 'FAIL',
@@ -243,6 +257,8 @@ export class MonacoAdapter implements EditorAdapter {
           actualLength: 0,
           verification: 'FAIL',
         },
+        compactDiagnostics,
+        compactDiagnosticsFormatted: formatCompactDiagnostics(compactDiagnostics),
       };
     }
 
@@ -273,14 +289,33 @@ export class MonacoAdapter implements EditorAdapter {
     };
 
     diagnostics.bridge = 'CONNECTED';
+    const isSuccess = Boolean(setRes.success);
+
+    const compactDiagnostics: CompactInsertionDiagnostics = {
+      platform: platformName,
+      url: currentUrl,
+      contentScript: 'LOADED',
+      extensionContext: typeof chrome !== 'undefined' && chrome.runtime?.id ? 'AVAILABLE' : 'FAILED',
+      editorDetector: 'FOUND',
+      editorType: 'Monaco',
+      editorBridge: 'AVAILABLE',
+      editorAdapter: this.name,
+      insertionRequest: 'RECEIVED',
+      write: diagnostics.write || (isSuccess ? 'PASS' : 'FAIL'),
+      readback: diagnostics.readback || (isSuccess ? 'PASS' : 'FAIL'),
+      verification: diagnostics.verification || (isSuccess ? 'PASS' : 'FAIL'),
+      final: isSuccess ? 'SUCCESS' : 'FAILED',
+    };
 
     return {
-      success: Boolean(setRes.success),
+      success: isSuccess,
       editorType: 'monaco',
       errorCode: setRes.errorCode,
       detectedEditorLanguage: setRes.detectedLanguage || metadata.detectedLanguage,
-      message: setRes.message || (setRes.success ? '✓ Inserted and verified' : 'Insertion into Monaco Editor failed.'),
+      message: setRes.message || (isSuccess ? '✓ Inserted and verified' : 'Insertion into Monaco Editor failed.'),
       diagnostics,
+      compactDiagnostics,
+      compactDiagnosticsFormatted: formatCompactDiagnostics(compactDiagnostics),
     };
   }
 }

@@ -7,6 +7,7 @@ export type EditorErrorCode =
   | 'MONACO_BRIDGE_UNAVAILABLE'
   | 'MONACO_MODEL_NOT_FOUND'
   | 'INSERTION_VERIFICATION_FAILED'
+  | 'EDITOR_READBACK_FAILED'
   | 'INSERTION_CANCELLED'
   | 'ALREADY_INSERTED'
   | 'CODE_STRUCTURE_INVALID'
@@ -28,8 +29,68 @@ export interface MonacoDiagnostics {
 export interface InsertionOptions {
   mode?: 'instant' | 'progressive';
   insertionId?: string;
+  typingSpeed?: { minDelay: number; maxDelay: number; enabled: boolean };
   onProgress?: (progress: number) => void;
   isCancelled?: () => boolean;
+}
+
+export interface CompactInsertionDiagnostics {
+  platform: string;
+  url: string;
+  contentScript: 'LOADED' | 'NOT_LOADED';
+  extensionContext: 'AVAILABLE' | 'FAILED';
+  editorDetector: 'FOUND' | 'NOT_FOUND';
+  editorType: string;
+  editorBridge: 'AVAILABLE' | 'UNAVAILABLE';
+  editorAdapter: string;
+  insertionRequest: 'RECEIVED' | 'NOT_RECEIVED';
+  write: 'PASS' | 'FAIL';
+  readback: 'PASS' | 'FAIL';
+  verification: 'PASS' | 'FAIL';
+  final: 'SUCCESS' | 'FAILED';
+}
+
+export function formatCompactDiagnostics(diag: CompactInsertionDiagnostics): string {
+  return [
+    `Platform:`,
+    diag.platform,
+    ``,
+    `URL:`,
+    diag.url,
+    ``,
+    `Content Script:`,
+    diag.contentScript,
+    ``,
+    `Extension Context:`,
+    diag.extensionContext,
+    ``,
+    `Editor Detector:`,
+    diag.editorDetector,
+    ``,
+    `Editor Type:`,
+    diag.editorType,
+    ``,
+    `Editor Bridge:`,
+    diag.editorBridge,
+    ``,
+    `Editor Adapter:`,
+    diag.editorAdapter,
+    ``,
+    `Insertion Request:`,
+    diag.insertionRequest,
+    ``,
+    `Write:`,
+    diag.write,
+    ``,
+    `Readback:`,
+    diag.readback,
+    ``,
+    `Verification:`,
+    diag.verification,
+    ``,
+    `Final:`,
+    diag.final,
+  ].join('\n');
 }
 
 export interface InsertionResult {
@@ -39,6 +100,8 @@ export interface InsertionResult {
   detectedEditorLanguage?: string | null;
   message?: string;
   diagnostics?: MonacoDiagnostics;
+  compactDiagnostics?: CompactInsertionDiagnostics;
+  compactDiagnosticsFormatted?: string;
 }
 
 export interface EditorAdapter {

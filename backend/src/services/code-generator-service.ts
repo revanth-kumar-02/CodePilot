@@ -42,7 +42,8 @@ export class CodeGeneratorService {
     rawPlan: unknown,
     requestedLanguage?: string,
     requestedVersion?: string,
-    overrideApiKeyOrProvider?: string | AIProvider
+    overrideApiKeyOrProvider?: string | AIProvider,
+    overrideProviderName?: string
   ): Promise<{ generatedCode: GeneratedCode; durationMs: number }> {
     const startTime = performance.now();
     console.log('[CodePilot][CodeGenerator] Code generation request started');
@@ -119,7 +120,8 @@ Return source code only.`;
             targetLanguage,
             platformRule,
             retryInstruction,
-            apiKey
+            apiKey,
+            overrideProviderName
           );
         }
 

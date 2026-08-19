@@ -1,5 +1,6 @@
-import { EditorAdapter, InsertionResult, InsertionOptions } from './types';
+import { EditorAdapter, InsertionResult, InsertionOptions, CompactInsertionDiagnostics, formatCompactDiagnostics } from './types';
 import { MonacoAdapter } from './monaco-adapter';
+import { LearnLogicifyAdapter } from './learnlogicify-adapter';
 import { CodeChefAdapter } from './codechef-adapter';
 import { CodeMirrorAdapter } from './codemirror-adapter';
 import { AceAdapter } from './ace-adapter';
@@ -14,6 +15,7 @@ const logger = new Logger('EditorManager');
 export class EditorManager {
   private static adapters: EditorAdapter[] = [
     new MonacoAdapter(),
+    new LearnLogicifyAdapter(),
     new CodeChefAdapter(),
     new CodeMirrorAdapter(),
     new AceAdapter(),
@@ -108,32 +110,70 @@ export class EditorManager {
 
     try {
       const adapter = this.getActiveAdapter();
-      const platformName = typeof window !== 'undefined' && window.location ? window.location.hostname : 'unknown';
+      const platformName = typeof window !== 'undefined' && window.location ? (window.location.hostname + ' ' + window.location.href).toLowerCase() : 'unknown';
 
       const currentActiveId = this.activeInsertionId;
       logger.info(`Insertion ID: ${insertionId} (active: ${currentActiveId})\nPlatform: ${platformName}\nEditor: ${adapter?.type || 'none'}\nRequest: START`);
 
+      // Helper to build compact diagnostics for standard adapters
+      const buildDiagnostics = (write: 'PASS' | 'FAIL', readback: 'PASS' | 'FAIL', verification: 'PASS' | 'FAIL', final: 'SUCCESS' | 'FAILED'): { compactDiagnostics: CompactInsertionDiagnostics; compactDiagnosticsFormatted: string } => {
+        const url = typeof window !== 'undefined' ? window.location.href : 'N/A';
+        const isLeetCode = url.includes('leetcode');
+        const pName = isLeetCode ? 'LeetCode' : url.includes('learnlogicify') || url.includes('logicify') ? 'LearnLogicify' : url.includes('codechef') ? 'CodeChef' : 'Generic';
+        const eType = adapter ? (adapter.type === 'monaco' ? 'Monaco' : adapter.type === 'codemirror' ? 'CodeMirror' : adapter.type === 'ace' ? 'Ace' : adapter.type) : 'Unknown';
+
+        const diag: CompactInsertionDiagnostics = {
+          platform: pName,
+          url,
+          contentScript: 'LOADED',
+          extensionContext: typeof chrome !== 'undefined' && chrome.runtime?.id ? 'AVAILABLE' : 'FAILED',
+          editorDetector: adapter ? 'FOUND' : 'NOT_FOUND',
+          editorType: eType,
+          editorBridge: 'AVAILABLE',
+          editorAdapter: adapter ? adapter.name : 'None',
+          insertionRequest: 'RECEIVED',
+          write,
+          readback,
+          verification,
+          final,
+        };
+        return {
+          compactDiagnostics: diag,
+          compactDiagnosticsFormatted: formatCompactDiagnostics(diag),
+        };
+      };
+
       if (!adapter) {
         logger.warn(`Insertion ID: ${insertionId} | Editor: NONE | Final: FAILED`);
+        const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('FAIL', 'FAIL', 'FAIL', 'FAILED');
         return {
           success: false,
           editorType: 'unknown',
           errorCode: 'EDITOR_NOT_FOUND',
           message: 'EDITOR_NOT_FOUND: No supported code editor detected on page.',
+          compactDiagnostics,
+          compactDiagnosticsFormatted,
         };
       }
 
       // 2. Structure Validation (Java)
       if (targetLanguage === 'java' || LanguageRegistry.normalize(targetLanguage) === 'java') {
-        const platform = platformName.includes('leetcode') ? 'leetcode' : 'generic';
+        const platform = platformName.includes('leetcode')
+          ? 'leetcode'
+          : platformName.includes('learnlogicify') || platformName.includes('logicify')
+          ? 'learnlogicify'
+          : 'generic';
         const javaCheck = this.validateJavaStructure(code, platform);
         if (!javaCheck.valid) {
           logger.warn(`Insertion ID: ${insertionId} | Java Validation: FAIL (${javaCheck.reason}) | Final: FAILED`);
+          const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('FAIL', 'FAIL', 'FAIL', 'FAILED');
           return {
             success: false,
             editorType: adapter.type,
             errorCode: 'CODE_STRUCTURE_INVALID',
             message: `CODE_STRUCTURE_INVALID: ${javaCheck.reason}`,
+            compactDiagnostics,
+            compactDiagnosticsFormatted,
           };
         }
       }
@@ -143,11 +183,14 @@ export class EditorManager {
       if (this.normalizeCode(currentContent) === this.normalizeCode(code)) {
         this.completedInsertionIds.add(insertionId);
         logger.info(`Insertion ID: ${insertionId} | Duplicate Guard: PASS | Final: ALREADY_INSERTED`);
+        const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('PASS', 'PASS', 'PASS', 'SUCCESS');
         return {
           success: true,
           editorType: adapter.type,
           errorCode: 'ALREADY_INSERTED',
           message: 'ALREADY_INSERTED: Exact generated code is already present in the editor.',
+          compactDiagnostics,
+          compactDiagnosticsFormatted,
         };
       }
 
@@ -155,7 +198,7 @@ export class EditorManager {
         this.activeCancelledIds.delete(options.insertionId);
       }
 
-      // 4. Custom Adapter Handling (e.g. MonacoAdapter)
+      // 4. Custom Adapter Handling (e.g. MonacoAdapter, LearnLogicifyAdapter)
       if (typeof adapter.insertCode === 'function') {
         const customRes = await adapter.insertCode(code, targetLanguage, options);
         if (customRes) {
@@ -179,11 +222,14 @@ export class EditorManager {
       };
 
       if (isCancelled()) {
+        const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('FAIL', 'FAIL', 'FAIL', 'FAILED');
         return {
           success: false,
           editorType: adapter.type,
           errorCode: 'INSERTION_CANCELLED',
           message: 'INSERTION_CANCELLED',
+          compactDiagnostics,
+          compactDiagnosticsFormatted,
         };
       }
 
@@ -191,11 +237,14 @@ export class EditorManager {
       const writeSuccess = await adapter.setValue(code);
       if (!writeSuccess) {
         logger.warn(`Insertion ID: ${insertionId} | Write: FAIL | Final: FAILED`);
+        const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('FAIL', 'FAIL', 'FAIL', 'FAILED');
         return {
           success: false,
           editorType: adapter.type,
           errorCode: 'EDITOR_NOT_ACCESSIBLE',
           message: 'EDITOR_NOT_ACCESSIBLE: Failed to write code into detected editor.',
+          compactDiagnostics,
+          compactDiagnosticsFormatted,
         };
       }
 
@@ -207,19 +256,25 @@ export class EditorManager {
       if (isVerified) {
         this.completedInsertionIds.add(insertionId);
         logger.info(`Insertion ID: ${insertionId} | Write: PASS | Readback: PASS | Final: INSERTED`);
+        const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('PASS', 'PASS', 'PASS', 'SUCCESS');
         return {
           success: true,
           editorType: adapter.type,
           message: '✓ Inserted and verified',
+          compactDiagnostics,
+          compactDiagnosticsFormatted,
         };
       }
 
       logger.warn(`Insertion ID: ${insertionId} | Write: PASS | Readback: FAIL | Final: FAILED`);
+      const { compactDiagnostics, compactDiagnosticsFormatted } = buildDiagnostics('PASS', 'FAIL', 'FAIL', 'FAILED');
       return {
         success: false,
         editorType: adapter.type,
-        errorCode: 'INSERTION_VERIFICATION_FAILED',
-        message: 'INSERTION_VERIFICATION_FAILED: Editor write completed but failed readback verification.',
+        errorCode: 'EDITOR_READBACK_FAILED',
+        message: 'EDITOR_READBACK_FAILED: Editor write completed but failed readback verification.',
+        compactDiagnostics,
+        compactDiagnosticsFormatted,
       };
     } finally {
       this.isInserting = false;

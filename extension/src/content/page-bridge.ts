@@ -7,6 +7,17 @@ export function initMonacoPageBridge(): void {
   if ((window as any)[BRIDGE_ID]) return;
   (window as any)[BRIDGE_ID] = true;
 
+  function computeTypingDelay(char: string, config?: { minDelay?: number; maxDelay?: number; enabled?: boolean }): number {
+    const enabled = config?.enabled ?? true;
+    if (!enabled) return 0;
+    const min = Math.max(5, config?.minDelay ?? 40);
+    const max = Math.max(min, config?.maxDelay ?? 70);
+    const base = min + Math.floor(Math.random() * (max - min + 1));
+    if (char === '\n') return Math.floor(base * 2.2);
+    if (char === ' ' || char === '\t') return Math.floor(base * 1.3);
+    return base;
+  }
+
   function findActiveMonaco() {
     const info = {
       runtimeFound: false,
@@ -527,13 +538,7 @@ export function initMonacoPageBridge(): void {
             '*'
           );
 
-          // Realistic human-like typing delay (slower & safer)
-          let delay = 28 + Math.floor(Math.random() * 22);
-          if (charToInsert === '\n') {
-            delay = 90 + Math.floor(Math.random() * 45);
-          } else if (charToInsert === ' ' || charToInsert === '\t') {
-            delay = 40 + Math.floor(Math.random() * 20);
-          }
+          const delay = computeTypingDelay(charToInsert, payload?.typingSpeed);
           setTimeout(domStep, delay);
         };
 
@@ -680,13 +685,7 @@ export function initMonacoPageBridge(): void {
           '*'
         );
 
-        // Realistic human-like typing delay (28ms - 50ms per character, pause on newline)
-        let delay = 28 + Math.floor(Math.random() * 22);
-        if (charToInsert === '\n') {
-          delay = 90 + Math.floor(Math.random() * 45);
-        } else if (charToInsert === ' ' || charToInsert === '\t') {
-          delay = 40 + Math.floor(Math.random() * 20);
-        }
+        const delay = computeTypingDelay(charToInsert, payload?.typingSpeed);
         setTimeout(step, delay);
       };
 

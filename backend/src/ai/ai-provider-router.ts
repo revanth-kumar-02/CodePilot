@@ -1,4 +1,5 @@
 import { AIProvider } from './ai-provider.js';
+import { ProviderFactory } from './provider-factory.js';
 import { GroqProvider } from './groq-provider.js';
 import { OpenRouterProvider } from './openrouter-provider.js';
 import { GeminiProvider } from './gemini-provider.js';
@@ -124,9 +125,9 @@ export class AIProviderRouter {
     return new MockAIProvider();
   }
 
-  public async analyzeProblem(problem: ProblemInput, overrideApiKey?: string): Promise<ProblemAnalysis> {
-    const provider = overrideApiKey
-      ? new GroqProvider(overrideApiKey, this.config.analysis.model, 'analysis')
+  public async analyzeProblem(problem: ProblemInput, overrideApiKey?: string, providerName?: string): Promise<ProblemAnalysis> {
+    const provider = (overrideApiKey || providerName)
+      ? ProviderFactory.getProvider(providerName || this.config.analysis.provider, overrideApiKey, 'analysis')
       : this.analysisProvider;
 
     const probId = problem.id || problem.title || 'problem';
@@ -144,9 +145,14 @@ export class AIProviderRouter {
     );
   }
 
-  public async generateSolutionPlan(problem: ProblemInput, isRecoveryAttempt: boolean = false, overrideApiKey?: string): Promise<SolutionPlan> {
-    const provider = overrideApiKey
-      ? new GroqProvider(overrideApiKey, this.config.reasoning.model, 'analysis')
+  public async generateSolutionPlan(
+    problem: ProblemInput,
+    isRecoveryAttempt: boolean = false,
+    overrideApiKey?: string,
+    providerName?: string
+  ): Promise<SolutionPlan> {
+    const provider = (overrideApiKey || providerName)
+      ? ProviderFactory.getProvider(providerName || this.config.reasoning.provider, overrideApiKey, 'analysis')
       : this.reasoningProvider;
 
     const probId = problem.id || problem.title || 'problem';
@@ -170,10 +176,11 @@ export class AIProviderRouter {
     targetLanguage: SupportedLanguage,
     rule?: PlatformRule,
     retryInstruction?: string,
-    overrideApiKey?: string
+    overrideApiKey?: string,
+    providerName?: string
   ): Promise<GeneratedCode> {
-    const provider = overrideApiKey
-      ? new GroqProvider(overrideApiKey, this.config.code.model, 'code')
+    const provider = (overrideApiKey || providerName)
+      ? ProviderFactory.getProvider(providerName || this.config.code.provider, overrideApiKey, 'code')
       : this.codeProvider;
 
     const probId = problem.id || problem.title || 'problem';
